@@ -30,6 +30,11 @@ class Cell:
         # KPI exposure: per-UE requested DL PRBs in the current allocation round
         # Map: {ue_imsi: required_dl_prbs}
         self.dl_total_prb_demand = {}
+        # Static per-slice DL PRB quotas (absolute PRBs per slice)
+        # Initialized from settings.RAN_SLICE_DL_PRB_SPLIT_DEFAULT
+        self.slice_dl_prb_quota = self._init_slice_quota()
+        # Tracking allocated PRBs by slice in the last round
+        self.allocated_dl_prb_by_slice = {s: 0 for s in self.slice_dl_prb_quota.keys()}
 
     def __repr__(self):
         return f"Cell({self.cell_id}, base_station={self.base_station.bs_id}, frequency_band={self.frequency_band}, carrier_frequency_MHz={self.carrier_frequency_MHz})"
@@ -150,6 +155,45 @@ class Cell:
         # for each UE, estimate the downlink, uplink bitrate and latency
         self.estimate_ue_bitrate_and_latency()
 
+    def _init_slice_quota(self):
+        """Compute initial absolute PRB quotas per slice from defaults in settings.
+        Any leftover PRBs (due to rounding) remain unused.
+        """
+        quotas = {}
+        try:
+            default_frac = settings.RAN_SLICE_DL_PRB_SPLIT_DEFAULT
+        except Exception:
+            default_frac = {"eMBB": 1.0, "URLLC": 0.0, "mMTC": 0.0}
+        total_assigned = 0
+        for s, frac in default_frac.items():
+            frac = max(0.0, float(frac))
+            cnt = int(self.max_dl_prb * frac)
+            quotas[s] = cnt
+            total_assigned += cnt
+        # Ensure no negative and no overflow; if overflow, scale down proportionally
+        if total_assigned > self.max_dl_prb and total_assigned > 0:
+            scale = self.max_dl_prb / total_assigned
+            for s in list(quotas.keys()):
+                quotas[s] = int(quotas[s] * scale)
+        return quotas
+
+    def set_slice_quota_by_fraction(self, frac_map):
+        """Update slice quotas using fractions, per this cell's max_dl_prb."""
+        if not isinstance(frac_map, dict):
+            return
+        quotas = {}
+        total = 0
+        for s, f in frac_map.items():
+            f = max(0.0, float(f))
+            cnt = int(self.max_dl_prb * f)
+            quotas[s] = cnt
+            total += cnt
+        if total > self.max_dl_prb and total > 0:
+            scale = self.max_dl_prb / total
+            for s in list(quotas.keys()):
+                quotas[s] = int(quotas[s] * scale)
+        self.slice_dl_prb_quota = quotas
+
     def allocate_prb(self):
         # QoS-aware Proportional Fair Scheduling (PFS)
 
@@ -162,6 +206,8 @@ class Cell:
         ue_prb_requirements = {}
         # reset demand map
         self.dl_total_prb_demand = {}
+        # Reset per-slice allocation tracking
+        self.allocated_dl_prb_by_slice = {s: 0 for s in self.slice_dl_prb_quota.keys()}
 
         # Step 1: Calculate required PRBs for GBR
         for ue in self.connected_ue_list.values():
@@ -183,32 +229,44 @@ class Cell:
             # Expose requested PRBs for KPI xApps
             self.dl_total_prb_demand[ue.ue_imsi] = dl_required_prbs
 
-        # Step 2: Allocate PRBs to meet GBR
-        dl_total_prb_demand_sum = sum(
-            req["dl_required_prbs"] for req in ue_prb_requirements.values()
-        )
+        # Step 2: Allocate within slice quotas
+        # Group UEs by slice
+        ues_by_slice = {}
+        for ue in self.connected_ue_list.values():
+            s = getattr(ue, "slice_type", None)
+            if s is None:
+                # If slice unknown, treat as eMBB
+                s = "eMBB"
+            ues_by_slice.setdefault(s, []).append(ue.ue_imsi)
 
-        if dl_total_prb_demand_sum <= self.max_dl_prb:
-            # allocate PRBs based on the required PRBs
-            for ue_imsi, req in ue_prb_requirements.items():
-                self.prb_ue_allocation_dict[ue_imsi]["downlink"] = req[
-                    "dl_required_prbs"
-                ]
-        else:
-            # allocate PRBs based on the proportion
-            # first allocate at least one PRB to each UE to ensure minimum service
-            dl_remaining_prbs = self.max_dl_prb
-            for ue in self.connected_ue_list.values():
-                prb = min(1, dl_remaining_prbs)
-                self.prb_ue_allocation_dict[ue.ue_imsi]["downlink"] = prb
-                dl_remaining_prbs -= prb
+        for s, quota in self.slice_dl_prb_quota.items():
+            ue_ids = ues_by_slice.get(s, [])
+            if not ue_ids or quota <= 0:
+                continue
+            demands = {uid: ue_prb_requirements.get(uid, {}).get("dl_required_prbs", 0) for uid in ue_ids}
+            total_demand = sum(demands.values())
+            # Baseline: guarantee at least 1 PRB to each UE if possible
+            remaining = quota
+            if remaining >= len(ue_ids):
+                for uid in ue_ids:
+                    self.prb_ue_allocation_dict[uid]["downlink"] = 1
+                remaining -= len(ue_ids)
+            else:
+                # Not enough quota for all: assign 1 PRB to first N UEs
+                for uid in ue_ids[:remaining]:
+                    self.prb_ue_allocation_dict[uid]["downlink"] = 1
+                self.allocated_dl_prb_by_slice[s] += remaining
+                continue
 
-            # then allocate the remaining PRBs based on the proportion
-            if dl_remaining_prbs > 0 and dl_total_prb_demand_sum > 0:
-                for ue_imsi, req in ue_prb_requirements.items():
-                    share = req["dl_required_prbs"] / dl_total_prb_demand_sum
-                    additional_prbs = int(share * dl_remaining_prbs)
-                    self.prb_ue_allocation_dict[ue_imsi]["downlink"] += additional_prbs
+            # Proportional distribution of remaining PRBs according to demand
+            if remaining > 0 and total_demand > 0:
+                for uid in ue_ids:
+                    share = demands[uid] / total_demand if total_demand > 0 else 0
+                    add = int(share * remaining)
+                    self.prb_ue_allocation_dict[uid]["downlink"] += add
+            # Track allocated by slice
+            alloc_slice = sum(self.prb_ue_allocation_dict[uid]["downlink"] for uid in ue_ids)
+            self.allocated_dl_prb_by_slice[s] = alloc_slice
 
         # Enforce per-UE live cap if set
         if self.prb_per_ue_cap is not None:
@@ -276,4 +334,6 @@ class Cell:
             "current_ul_load": self.allocated_ul_prb / self.max_ul_prb,
             "current_load": self.current_load,
             "connected_ue_list": list(self.connected_ue_list.keys()),
+            "slice_dl_prb_quota": self.slice_dl_prb_quota,
+            "allocated_dl_prb_by_slice": self.allocated_dl_prb_by_slice,
         }

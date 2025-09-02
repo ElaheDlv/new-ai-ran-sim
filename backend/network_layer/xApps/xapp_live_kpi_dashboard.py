@@ -10,6 +10,8 @@ import plotly.graph_objs as go
 from settings import (
     RAN_PRB_CAP_SLIDER_DEFAULT,
     RAN_PRB_CAP_SLIDER_MAX,
+    RAN_SLICE_DL_PRB_SPLIT_DEFAULT,
+    RAN_SLICE_KNOB_STEP_FRAC,
 )
 
 # Rolling window sizing and refresh
@@ -182,6 +184,47 @@ class xAppLiveKPIDashboard(xAppBase):
                     ],
                 ),
 
+                # Slice split controls (fractions per cell)
+                html.Div(
+                    style={"display": "grid", "gridTemplateColumns": "1fr 1fr 1fr", "gap": "12px", "marginTop": "8px"},
+                    children=[
+                        html.Div([
+                            html.Label("eMBB share (0-1)"),
+                            dcc.Slider(
+                                id="slice-embb-share",
+                                min=0,
+                                max=1.0,
+                                step=RAN_SLICE_KNOB_STEP_FRAC,
+                                value=RAN_SLICE_DL_PRB_SPLIT_DEFAULT.get("eMBB", 0.7),
+                                tooltip={"always_visible": False},
+                            ),
+                        ]),
+                        html.Div([
+                            html.Label("URLLC share (0-1)"),
+                            dcc.Slider(
+                                id="slice-urllc-share",
+                                min=0,
+                                max=1.0,
+                                step=RAN_SLICE_KNOB_STEP_FRAC,
+                                value=RAN_SLICE_DL_PRB_SPLIT_DEFAULT.get("URLLC", 0.2),
+                                tooltip={"always_visible": False},
+                            ),
+                        ]),
+                        html.Div([
+                            html.Label("mMTC share (0-1)"),
+                            dcc.Slider(
+                                id="slice-mmtc-share",
+                                min=0,
+                                max=1.0,
+                                step=RAN_SLICE_KNOB_STEP_FRAC,
+                                value=RAN_SLICE_DL_PRB_SPLIT_DEFAULT.get("mMTC", 0.1),
+                                tooltip={"always_visible": False},
+                            ),
+                        ]),
+                    ],
+                ),
+                html.Div(id="slice-share-label", style={"marginTop": "4px"}),
+
                 html.Hr(),
 
                 html.Div(style=ROW_1COL, children=[dcc.Graph(id="ue-bitrate")]),
@@ -209,6 +252,35 @@ class xAppLiveKPIDashboard(xAppBase):
                 for cell in self.cell_list.values():
                     setattr(cell, "prb_per_ue_cap", cap_to_apply)
                 return f"Current cap: {cap_to_apply if cap_to_apply is not None else 'unlimited'} PRBs/UE"
+
+        @app.callback(
+            Output("slice-share-label", "children"),
+            Input("slice-embb-share", "value"),
+            Input("slice-urllc-share", "value"),
+            Input("slice-mmtc-share", "value"),
+        )
+        def _set_slice_shares(v_embb, v_urllc, v_mmtc):
+            # Normalize if sum > 1.0
+            shares = {
+                "eMBB": float(v_embb or 0.0),
+                "URLLC": float(v_urllc or 0.0),
+                "mMTC": float(v_mmtc or 0.0),
+            }
+            ssum = sum(shares.values())
+            if ssum > 1.0 and ssum > 0:
+                scale = 1.0 / ssum
+                for k in shares:
+                    shares[k] = round(shares[k] * scale, 4)
+            with self._lock:
+                for cell in self.cell_list.values():
+                    if hasattr(cell, "set_slice_quota_by_fraction"):
+                        cell.set_slice_quota_by_fraction(shares)
+            # Preview for one arbitrary cell
+            any_cell = next(iter(self.cell_list.values())) if self.cell_list else None
+            if any_cell:
+                quotas = {k: int(any_cell.max_dl_prb * shares.get(k, 0.0)) for k in shares}
+                return f"Slice shares set to eMBB={shares['eMBB']:.2f}, URLLC={shares['URLLC']:.2f}, mMTC={shares['mMTC']:.2f}. Example quotas on {any_cell.cell_id}: {quotas} (of max {any_cell.max_dl_prb})."
+            return f"Slice shares set to eMBB={shares['eMBB']:.2f}, URLLC={shares['URLLC']:.2f}, mMTC={shares['mMTC']:.2f}."
 
         @app.callback(
             Output("ue-bitrate", "figure"),
@@ -314,4 +386,3 @@ class xAppLiveKPIDashboard(xAppBase):
         self._dash_thread = threading.Thread(target=_run, daemon=True)
         self._dash_thread.start()
         print(f"{self.xapp_id}: live KPI dashboard at http://localhost:{DASH_PORT}")
-

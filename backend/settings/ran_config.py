@@ -29,6 +29,17 @@ RAN_RESOURCE_ELEMENTS_PER_PRB_PER_SLOT = (
 RAN_PRB_CAP_SLIDER_DEFAULT = 0
 RAN_PRB_CAP_SLIDER_MAX = 50
 
+# Static per-slice DL PRB split (fractions sum to <= 1.0). Remaining PRBs, if any, stay unused.
+# These are applied per cell (converted to integer PRB counts using that cell's max_dl_prb).
+RAN_SLICE_DL_PRB_SPLIT_DEFAULT = {
+    "eMBB": 0.7,
+    "URLLC": 0.2,
+    "mMTC": 0.1,
+}
+
+# UI knob step for slice split sliders
+RAN_SLICE_KNOB_STEP_FRAC = 0.05
+
 # ETSI TS 138 214 V15.3.0. Release 15 Table 5.1.3.1-2 MCS index table 2 for PDSCH
 # MCS Index (I_MCS) | Modulation Order Qm | Target code Rate R x [1024] | Spectral efficiency
 RAN_MCS_SPECTRAL_EFFICIENCY_TABLE = {
