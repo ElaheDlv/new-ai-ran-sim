@@ -1,10 +1,32 @@
+import os
+import argparse
+import asyncio
+import json
+from functools import partial
+
 import dotenv
 
+# -------------------------------------------------------------
+# CLI args to control topology preset and run mode before import
+# -------------------------------------------------------------
+parser = argparse.ArgumentParser(description="AI-RAN Simulator Backend")
+parser.add_argument("--preset", choices=["default", "simple"], help="Topology preset")
+parser.add_argument("--ue-max", type=int, help="Override UE_DEFAULT_MAX_COUNT")
+parser.add_argument(
+    "--mode", choices=["server", "headless"], default="server", help="Run as WebSocket server or headless loop",
+)
+parser.add_argument("--steps", type=int, default=120, help="Headless: number of steps to run")
+args, unknown = parser.parse_known_args()
+
+if args.preset:
+    os.environ["RAN_TOPOLOGY_PRESET"] = args.preset
+if args.ue_max is not None:
+    os.environ["UE_DEFAULT_MAX_COUNT"] = str(args.ue_max)
+
+# Load .env (won't override already-set env)
 dotenv.load_dotenv()
 
-import asyncio
 import websockets
-import json
 import settings
 from utils import (
     WebSocketResponse,
@@ -15,13 +37,11 @@ from utils import (
     handle_query_knowledge,
     stream_agent_chat,
     handle_network_user_action,
+    setup_logging,
+    WebSocketSingleton,
 )
-
 from network_layer.simulation_engine import SimulationEngine
-from utils import setup_logging, WebSocketSingleton
 from knowledge_layer import KnowledgeRouter
-from functools import partial
-
 from intelligence_layer import engineer_chat_agent
 from intelligence_layer.ai_service_pipeline import handle_ai_service_pipeline_chat
 
@@ -90,6 +110,21 @@ async def websocket_handler(websocket):
 
 
 async def main():
+    # Headless mode: run simulation loop without WebSocket server
+    if args.mode == "headless":
+        eng = SimulationEngine()
+        eng.reset_network()
+        eng.network_setup()
+        for _ in range(args.steps):
+            eng.sim_step += 1
+            eng.step(settings.SIM_STEP_TIME_DEFAULT)
+            await asyncio.sleep(settings.SIM_STEP_TIME_DEFAULT)
+        print(
+            f"Headless run completed. BS: {list(eng.base_station_list.keys())}, Cells: {list(eng.cell_list.keys())}"
+        )
+        return
+
+    # Server mode (default)
     async with websockets.serve(
         websocket_handler, settings.WS_SERVER_HOST, settings.WS_SERVER_PORT
     ):

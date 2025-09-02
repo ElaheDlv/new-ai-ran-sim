@@ -1,6 +1,7 @@
 # ---------------------------
 # RAN Configuration
 # ---------------------------
+import os
 RAN_BS_LOAD_HISTORY_LENGTH = 3
 RAN_BS_REF_SIGNAL_DEFAULT_TRASNMIT_POWER = 40
 
@@ -102,22 +103,34 @@ RAN_MCS_SPECTRAL_EFFICIENCY_TABLE = {
 }
 
 
+RAN_TOPOLOGY_PRESET = os.getenv("RAN_TOPOLOGY_PRESET", "default")  # 'default' or 'simple'
+
+
 def RAN_BS_DEFAULT_CELLS(bs_id):
+    """Return the default cell list for a base station.
+
+    If RAN_TOPOLOGY_PRESET == 'simple', return a single n78 cell for easier testing.
+    Otherwise, return the mid and high frequency cells.
+    """
+    if RAN_TOPOLOGY_PRESET == "simple":
+        return [
+            {
+                "cell_id": f"{bs_id}_cell_mid_freq",
+                "frequency_band": "n78",
+                "carrier_frequency_MHz": 3500,
+                "bandwidth_Hz": 100e6,
+                "max_prb": 273,
+                "max_dl_prb": int(RAN_CELL_DL_UL_PRB_SPLIT["n78"][0] * 273),
+                "max_ul_prb": 273 - int(RAN_CELL_DL_UL_PRB_SPLIT["n78"][0] * 273),
+                "cell_radius": 800,
+                "transmit_power_dBm": 40,
+                "cell_individual_offset_dBm": 0,
+                "frequency_priority": 5,
+                "qrx_level_min": -98,
+            },
+        ]
+    # default: two cells
     return [
-        # {
-        #     "cell_id": f"{bs_id}_cell_low_freq",
-        #     "frequency_band": "n1",
-        #     "carrier_frequency_MHz": 2100,
-        #     "bandwidth_Hz": 20e6,
-        #     "max_prb": 106,
-        #     "max_dl_prb": int(RAN_CELL_DL_UL_PRB_SPLIT["n1"][0] * 106),
-        #     "max_ul_prb": 106 - int(RAN_CELL_DL_UL_PRB_SPLIT["n1"][0] * 106),
-        #     "cell_radius": 1500,
-        #     "transmit_power_dBm": 40,
-        #     "cell_individual_offset_dBm": 0,
-        #     "frequency_priority": 3,
-        #     "qrx_level_min": -110,
-        # },
         {
             "cell_id": f"{bs_id}_cell_mid_freq",
             "frequency_band": "n78",
@@ -176,51 +189,49 @@ def RAN_BS_EDGE_DEFAULT_SERVER():
     }
 
 
-RAN_DEFAULT_BS_LIST = [
-    {
-        "bs_id": "bs_11",
-        "position_x": 500,
-        "position_y": 500,
-        "cell_list": RAN_BS_DEFAULT_CELLS("bs_11"),
-        "rrc_measurement_events": RAN_BS_DEFAULT_RRC_MEASUREMENT_EVENTS(),
-        "edge_server": RAN_BS_EDGE_DEFAULT_SERVER(),
-    },
-    {
-        "bs_id": "bs_12",
-        "position_x": 1500,
-        "position_y": 500,
-        "cell_list": RAN_BS_DEFAULT_CELLS("bs_12"),
-        "rrc_measurement_events": RAN_BS_DEFAULT_RRC_MEASUREMENT_EVENTS(),
-        "edge_server": RAN_BS_EDGE_DEFAULT_SERVER(),
-    },
-    {
-        "bs_id": "bs_21",
-        "position_x": 500,
-        "position_y": 1500,
-        "cell_list": RAN_BS_DEFAULT_CELLS("bs_21"),
-        "rrc_measurement_events": RAN_BS_DEFAULT_RRC_MEASUREMENT_EVENTS(),
-        "edge_server": RAN_BS_EDGE_DEFAULT_SERVER(),
-    },
-    {
-        "bs_id": "bs_22",
-        "position_x": 1500,
-        "position_y": 1500,
-        "cell_list": RAN_BS_DEFAULT_CELLS("bs_22"),
-        "rrc_measurement_events": RAN_BS_DEFAULT_RRC_MEASUREMENT_EVENTS(),
-        "edge_server": RAN_BS_EDGE_DEFAULT_SERVER(),
-    },
-    # {
-    #     "bs_id": "bs_31",
-    #     "position_x": 500,
-    #     "position_y": 2500,
-    #     "cell_list": RAN_BS_DEFAULT_CELLS("bs_31"),
-    #     "rrc_measurement_events": RAN_BS_DEFAULT_RRC_MEASUREMENT_EVENTS(),
-    # },
-    # {
-    #     "bs_id": "bs_32",
-    #     "position_x": 1500,
-    #     "position_y": 2500,
-    #     "cell_list": RAN_BS_DEFAULT_CELLS("bs_32"),
-    #     "rrc_measurement_events": RAN_BS_DEFAULT_RRC_MEASUREMENT_EVENTS(),
-    # },
-]
+if RAN_TOPOLOGY_PRESET == "simple":
+    RAN_DEFAULT_BS_LIST = [
+        {
+            "bs_id": "bs_1",
+            "position_x": 1000,
+            "position_y": 1000,
+            "cell_list": RAN_BS_DEFAULT_CELLS("bs_1"),
+            "rrc_measurement_events": RAN_BS_DEFAULT_RRC_MEASUREMENT_EVENTS(),
+            "edge_server": RAN_BS_EDGE_DEFAULT_SERVER(),
+        }
+    ]
+else:
+    RAN_DEFAULT_BS_LIST = [
+        {
+            "bs_id": "bs_11",
+            "position_x": 500,
+            "position_y": 500,
+            "cell_list": RAN_BS_DEFAULT_CELLS("bs_11"),
+            "rrc_measurement_events": RAN_BS_DEFAULT_RRC_MEASUREMENT_EVENTS(),
+            "edge_server": RAN_BS_EDGE_DEFAULT_SERVER(),
+        },
+        {
+            "bs_id": "bs_12",
+            "position_x": 1500,
+            "position_y": 500,
+            "cell_list": RAN_BS_DEFAULT_CELLS("bs_12"),
+            "rrc_measurement_events": RAN_BS_DEFAULT_RRC_MEASUREMENT_EVENTS(),
+            "edge_server": RAN_BS_EDGE_DEFAULT_SERVER(),
+        },
+        {
+            "bs_id": "bs_21",
+            "position_x": 500,
+            "position_y": 1500,
+            "cell_list": RAN_BS_DEFAULT_CELLS("bs_21"),
+            "rrc_measurement_events": RAN_BS_DEFAULT_RRC_MEASUREMENT_EVENTS(),
+            "edge_server": RAN_BS_EDGE_DEFAULT_SERVER(),
+        },
+        {
+            "bs_id": "bs_22",
+            "position_x": 1500,
+            "position_y": 1500,
+            "cell_list": RAN_BS_DEFAULT_CELLS("bs_22"),
+            "rrc_measurement_events": RAN_BS_DEFAULT_RRC_MEASUREMENT_EVENTS(),
+            "edge_server": RAN_BS_EDGE_DEFAULT_SERVER(),
+        },
+    ]
