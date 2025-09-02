@@ -23,6 +23,12 @@ SLICE_MOVE_STEP_PRBS = 1  # Treat one RB (paper) as 1 PRBs here
 
 
 # --- Layout helpers (keeps graphs compact) ---
+SLICE_COLORS = {
+    "eMBB": "#1f77b4",   # blue
+    "URLLC": "#d62728",  # red
+    "mMTC": "#2ca02c",   # green
+    None: "#7f7f7f",       # grey fallback
+}
 CONTAINER_STYLE = {
     "fontFamily": "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
     "padding": "12px",
@@ -250,6 +256,7 @@ class xAppLiveKPIDashboard(xAppBase):
                     ],
                 ),
                 html.Div(id="slice-move-label", style={"marginTop": "4px"}),
+                html.Div(id="ue-slice-list", style={"marginTop": "4px", "fontSize": "12px", "color": "#444"}),
 
                 html.Hr(),
 
@@ -370,6 +377,7 @@ class xAppLiveKPIDashboard(xAppBase):
             Output("ue-prb-requested", "figure"),
             Output("cell-load", "figure"),
             Output("ue-buffer", "figure"),
+            Output("ue-slice-list", "children"),
             Input("tick", "n_intervals"),
         )
         def _update(_n):
@@ -377,7 +385,7 @@ class xAppLiveKPIDashboard(xAppBase):
                 tx = list(self._t)
                 if not tx:
                     empty = go.Figure()
-                    return empty, empty, empty, empty, empty, empty, empty
+                    return empty, empty, empty, empty, empty, empty, empty, ""
 
                 ue_keys = list(set(
                     list(self._ue_dl_mbps.keys())
@@ -394,40 +402,58 @@ class xAppLiveKPIDashboard(xAppBase):
                     + list(self._cell_max_prb.keys())
                 ))
 
+                # Label helper and color selection by slice
+                slice_map = {}
+                try:
+                    for imsi in ue_keys:
+                        ue_obj = self.ue_list.get(imsi)
+                        slice_map[imsi] = getattr(ue_obj, "slice_type", None)
+                except Exception:
+                    pass
+                def _label(imsi, suffix):
+                    sl = slice_map.get(imsi)
+                    sl_str = sl if sl is not None else "?"
+                    return f"{imsi} ({sl_str}) {suffix}"
+
                 # --- UE bitrate (Mbps) ---
                 tr_bitrate = []
                 for imsi in ue_keys:
                     ys = list(self._ue_dl_mbps.get(imsi, []))
                     if ys:
-                        tr_bitrate.append(go.Scatter(x=tx[-len(ys):], y=ys, mode="lines", name=f"{imsi} DL Mbps"))
+                        c = SLICE_COLORS.get(slice_map.get(imsi))
+                        tr_bitrate.append(go.Scatter(x=tx[-len(ys):], y=ys, mode="lines", name=_label(imsi, "DL Mbps"), line=dict(color=c)))
 
                 # --- UE SINR ---
                 tr_sinr = []
                 for imsi in ue_keys:
                     ys_s = list(self._ue_sinr_db.get(imsi, []))
                     if ys_s:
-                        tr_sinr.append(go.Scatter(x=tx[-len(ys_s):], y=ys_s, mode="lines", name=f"{imsi} SINR (dB)"))
+                        c = SLICE_COLORS.get(slice_map.get(imsi))
+                        tr_sinr.append(go.Scatter(x=tx[-len(ys_s):], y=ys_s, mode="lines", name=_label(imsi, "SINR (dB)"), line=dict(color=c)))
 
                 # --- UE CQI ---
                 tr_cqi = []
                 for imsi in ue_keys:
                     ys_c = list(self._ue_cqi.get(imsi, []))
                     if ys_c:
-                        tr_cqi.append(go.Scatter(x=tx[-len(ys_c):], y=ys_c, mode="lines", name=f"{imsi} CQI"))
+                        c = SLICE_COLORS.get(slice_map.get(imsi))
+                        tr_cqi.append(go.Scatter(x=tx[-len(ys_c):], y=ys_c, mode="lines", name=_label(imsi, "CQI"), line=dict(color=c)))
 
                 # --- UE DL PRBs: GRANTED ---
                 tr_prb_granted = []
                 for imsi in ue_keys:
                     ys_g = list(self._ue_dl_prb.get(imsi, []))
                     if ys_g:
-                        tr_prb_granted.append(go.Scatter(x=tx[-len(ys_g):], y=ys_g, mode="lines", name=f"{imsi} granted"))
+                        c = SLICE_COLORS.get(slice_map.get(imsi))
+                        tr_prb_granted.append(go.Scatter(x=tx[-len(ys_g):], y=ys_g, mode="lines", name=_label(imsi, "granted"), line=dict(color=c)))
 
                 # --- UE DL PRBs: REQUESTED ---
                 tr_prb_requested = []
                 for imsi in ue_keys:
                     ys_r = list(getattr(self, "_ue_dl_prb_req", {}).get(imsi, []))
                     if ys_r:
-                        tr_prb_requested.append(go.Scatter(x=tx[-len(ys_r):], y=ys_r, mode="lines", name=f"{imsi} requested"))
+                        c = SLICE_COLORS.get(slice_map.get(imsi))
+                        tr_prb_requested.append(go.Scatter(x=tx[-len(ys_r):], y=ys_r, mode="lines", name=_label(imsi, "requested"), line=dict(color=c)))
 
                 # --- Cell load & PRBs ---
                 tr_cell = []
@@ -448,7 +474,8 @@ class xAppLiveKPIDashboard(xAppBase):
                 for imsi in ue_keys:
                     ys = list(self._ue_dl_buf.get(imsi, []))
                     if ys:
-                        tr_buf.append(go.Scatter(x=tx[-len(ys):], y=ys, mode="lines", name=f"{imsi} DL buffer (bytes)"))
+                        c = SLICE_COLORS.get(slice_map.get(imsi))
+                        tr_buf.append(go.Scatter(x=tx[-len(ys):], y=ys, mode="lines", name=_label(imsi, "DL buffer (bytes)"), line=dict(color=c)))
 
             fig_bitrate = tidy(go.Figure(data=tr_bitrate), "Per‑UE Downlink Bitrate (Mbps)", "Mbps")
             fig_sinr = tidy(go.Figure(data=tr_sinr), "Per‑UE SINR", "SINR (dB)")
@@ -458,7 +485,11 @@ class xAppLiveKPIDashboard(xAppBase):
             fig_cell = tidy(go.Figure(data=tr_cell), "Per‑Cell Load & PRBs", "Value / PRBs")
             fig_buf = tidy(go.Figure(data=tr_buf), "Per‑UE DL Buffer (bytes)*", "Bytes")
 
-            return fig_bitrate, fig_sinr, fig_cqi, fig_prb_granted, fig_prb_requested, fig_cell, fig_buf
+            # UE→slice preview string (compact)
+            ue_preview = ", ".join([f"{imsi}→{slice_map.get(imsi) or '?'}" for imsi in sorted(ue_keys)])
+            ue_slice_children = html.Div([html.Strong("UE→Slice: "), html.Span(ue_preview)])
+
+            return fig_bitrate, fig_sinr, fig_cqi, fig_prb_granted, fig_prb_requested, fig_cell, fig_buf, ue_slice_children
 
         def _run():
             app.run_server(host="127.0.0.1", port=DASH_PORT, debug=False)
