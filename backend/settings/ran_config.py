@@ -24,6 +24,11 @@ RAN_RESOURCE_ELEMENTS_PER_PRB_PER_SLOT = (
     RAN_SUBCARRIERS_PER_PRB * RAN_SYMBOLS_PER_SLOT
 )  # 12 subcarriers * 14 symbols = 168 resource elements per PRB per slot
 
+# Live KPI Dashboard controls
+# 0 means unlimited per-UE DL PRB cap; UI will map 0 -> unlimited.
+RAN_PRB_CAP_SLIDER_DEFAULT = 0
+RAN_PRB_CAP_SLIDER_MAX = 50
+
 # ETSI TS 138 214 V15.3.0. Release 15 Table 5.1.3.1-2 MCS index table 2 for PDSCH
 # MCS Index (I_MCS) | Modulation Order Qm | Target code Rate R x [1024] | Spectral efficiency
 RAN_MCS_SPECTRAL_EFFICIENCY_TABLE = {

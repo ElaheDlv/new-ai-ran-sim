@@ -59,20 +59,45 @@ def start_ai_service_in_docker(ai_service_image_url: str, container_name: str):
 
     try:
         # --------------------------------
-        # Pull the docker image
+        # Ensure the Docker image is available
         # ---------------------------------
-        logger.info(f"Pulling Docker image {ai_service_image_url} ...")
-        subprocess.run(
-            ["docker", "pull", ai_service_image_url],
-            check=True,
-        )
-        logger.info(f"Docker image {ai_service_image_url} pulled successfully.")
+        image_available_locally = False
+        try:
+            # Check if the image exists locally; if so, skip pulling
+            subprocess.run(
+                ["docker", "image", "inspect", ai_service_image_url],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            image_available_locally = True
+            logger.info(
+                f"Docker image {ai_service_image_url} found locally. Skipping pull."
+            )
+        except subprocess.CalledProcessError:
+            logger.info(
+                f"Docker image {ai_service_image_url} not found locally. Attempting to pull..."
+            )
+
+        if not image_available_locally:
+            logger.info(f"Pulling Docker image {ai_service_image_url} ...")
+            subprocess.run(
+                ["docker", "pull", ai_service_image_url],
+                check=True,
+            )
+            logger.info(f"Docker image {ai_service_image_url} pulled successfully.")
 
         # ----------------------------------
         # Save the disk size of the pulled docker image
         # ----------------------------------
         docker_image_size_bytes = subprocess.run(
-            ["docker", "image", "inspect", ai_service_image_url, "--format={{.Size}}"],
+            [
+                "docker",
+                "image",
+                "inspect",
+                ai_service_image_url,
+                "--format={{.Size}}",
+            ],
             capture_output=True,
             text=True,
             check=True,

@@ -25,6 +25,11 @@ class Cell:
         self.prb_ue_allocation_dict = {}  # { "ue_imsi": {"downlink": 30, "uplink": 5}}
         self.connected_ue_list = {}
         self.ue_uplink_signal_strength_dict = {}
+        # Live control: per-UE PRB cap (None means unlimited)
+        self.prb_per_ue_cap = None
+        # KPI exposure: per-UE requested DL PRBs in the current allocation round
+        # Map: {ue_imsi: required_dl_prbs}
+        self.dl_total_prb_demand = {}
 
     def __repr__(self):
         return f"Cell({self.cell_id}, base_station={self.base_station.bs_id}, frequency_band={self.frequency_band}, carrier_frequency_MHz={self.carrier_frequency_MHz})"
@@ -155,6 +160,8 @@ class Cell:
 
         # sample QoS and channel condition-aware PRB allocation
         ue_prb_requirements = {}
+        # reset demand map
+        self.dl_total_prb_demand = {}
 
         # Step 1: Calculate required PRBs for GBR
         for ue in self.connected_ue_list.values():
@@ -173,13 +180,15 @@ class Cell:
                 "dl_required_prbs": dl_required_prbs,
                 "dl_throughput_per_prb": dl_throughput_per_prb,
             }
+            # Expose requested PRBs for KPI xApps
+            self.dl_total_prb_demand[ue.ue_imsi] = dl_required_prbs
 
         # Step 2: Allocate PRBs to meet GBR
-        dl_total_prb_demand = sum(
+        dl_total_prb_demand_sum = sum(
             req["dl_required_prbs"] for req in ue_prb_requirements.values()
         )
 
-        if dl_total_prb_demand <= self.max_dl_prb:
+        if dl_total_prb_demand_sum <= self.max_dl_prb:
             # allocate PRBs based on the required PRBs
             for ue_imsi, req in ue_prb_requirements.items():
                 self.prb_ue_allocation_dict[ue_imsi]["downlink"] = req[
@@ -195,11 +204,18 @@ class Cell:
                 dl_remaining_prbs -= prb
 
             # then allocate the remaining PRBs based on the proportion
-            if dl_remaining_prbs > 0:
+            if dl_remaining_prbs > 0 and dl_total_prb_demand_sum > 0:
                 for ue_imsi, req in ue_prb_requirements.items():
-                    share = req["dl_required_prbs"] / dl_total_prb_demand
+                    share = req["dl_required_prbs"] / dl_total_prb_demand_sum
                     additional_prbs = int(share * dl_remaining_prbs)
                     self.prb_ue_allocation_dict[ue_imsi]["downlink"] += additional_prbs
+
+        # Enforce per-UE live cap if set
+        if self.prb_per_ue_cap is not None:
+            for ue_imsi in list(self.connected_ue_list.keys()):
+                current_alloc = self.prb_ue_allocation_dict[ue_imsi]["downlink"]
+                if current_alloc > self.prb_per_ue_cap:
+                    self.prb_ue_allocation_dict[ue_imsi]["downlink"] = self.prb_per_ue_cap
 
         # # Logging
         # for ue_imsi, allocation in self.prb_ue_allocation_dict.items():
