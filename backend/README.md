@@ -80,6 +80,32 @@ What the preset does:
 
 Return to the full 4‑BS/8‑cell topology by omitting `--preset` (or setting `--preset default`).
 
+### Control how many UEs per slice (simple preset)
+
+You can explicitly choose how many UEs are subscribed to each slice when using the simple preset. These UEs will attach to their single subscribed slice deterministically.
+
+- With CLI flags:
+
+```bash
+python main.py --preset simple --ue-max 10 \
+  --ue-embb 6 --ue-urllc 3 --ue-mmtc 1 --mode headless --steps 120
+```
+
+- With environment variables:
+
+```bash
+export RAN_TOPOLOGY_PRESET=simple
+export UE_DEFAULT_MAX_COUNT=10
+export UE_SIMPLE_COUNT_EMBB=6
+export UE_SIMPLE_COUNT_URLLC=3
+export UE_SIMPLE_COUNT_MMTC=1
+python main.py
+```
+
+Notes:
+- Counts are capped so they never exceed `UE_DEFAULT_MAX_COUNT` and any remainder fills eMBB.
+- Runtime spawn is still dynamic (1–2 per step in simple mode); slice membership is fixed per IMSI.
+
 ---
 
 ## 📊 Live KPI Dashboard xApp

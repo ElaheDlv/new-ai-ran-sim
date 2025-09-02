@@ -12,6 +12,9 @@ import dotenv
 parser = argparse.ArgumentParser(description="AI-RAN Simulator Backend")
 parser.add_argument("--preset", choices=["default", "simple"], help="Topology preset")
 parser.add_argument("--ue-max", type=int, help="Override UE_DEFAULT_MAX_COUNT")
+parser.add_argument("--ue-embb", type=int, help="Simple preset: number of UEs with eMBB subscription")
+parser.add_argument("--ue-urllc", type=int, help="Simple preset: number of UEs with URLLC subscription")
+parser.add_argument("--ue-mmtc", type=int, help="Simple preset: number of UEs with mMTC subscription")
 parser.add_argument(
     "--mode", choices=["server", "headless"], default="server", help="Run as WebSocket server or headless loop",
 )
@@ -22,6 +25,12 @@ if args.preset:
     os.environ["RAN_TOPOLOGY_PRESET"] = args.preset
 if args.ue_max is not None:
     os.environ["UE_DEFAULT_MAX_COUNT"] = str(args.ue_max)
+if args.ue_embb is not None:
+    os.environ["UE_SIMPLE_COUNT_EMBB"] = str(args.ue_embb)
+if args.ue_urllc is not None:
+    os.environ["UE_SIMPLE_COUNT_URLLC"] = str(args.ue_urllc)
+if args.ue_mmtc is not None:
+    os.environ["UE_SIMPLE_COUNT_MMTC"] = str(args.ue_mmtc)
 
 # Load .env (won't override already-set env)
 dotenv.load_dotenv()
