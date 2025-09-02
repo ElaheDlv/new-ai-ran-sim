@@ -82,7 +82,7 @@ Return to the full 4‑BS/8‑cell topology by omitting `--preset` (or setting `
 
 ### Control how many UEs per slice (simple preset)
 
-You can explicitly choose how many UEs are subscribed to each slice when using the simple preset. These UEs will attach to their single subscribed slice deterministically.
+You can explicitly choose how many UEs are subscribed to each slice when using the simple preset. These UEs attach to their single subscribed slice deterministically.
 
 - With CLI flags:
 
@@ -103,7 +103,8 @@ python main.py
 ```
 
 Notes:
-- Counts are capped so they never exceed `UE_DEFAULT_MAX_COUNT` and any remainder fills eMBB.
+- Total UEs = sum of the slice counts when `--preset simple`. If you also pass `--ue-max` and it differs, the backend adjusts the total to match the sum of slice counts.
+- Omit the slice counts to keep the default randomized distribution.
 - Runtime spawn is still dynamic (1–2 per step in simple mode); slice membership is fixed per IMSI.
 
 ---

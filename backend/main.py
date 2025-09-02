@@ -23,8 +23,19 @@ args, unknown = parser.parse_known_args()
 
 if args.preset:
     os.environ["RAN_TOPOLOGY_PRESET"] = args.preset
-if args.ue_max is not None:
+
+# If per-slice counts are provided in simple preset, align total UEs accordingly
+slice_counts = [c for c in (args.ue_embb, args.ue_urllc, args.ue_mmtc) if c is not None]
+if slice_counts and (args.preset == "simple"):
+    total_from_slices = sum(slice_counts)
+    if args.ue_max is not None and args.ue_max != total_from_slices:
+        print(
+            f"[main] --ue-max ({args.ue_max}) != sum of slice counts ({total_from_slices}); adjusting total to {total_from_slices}."
+        )
+    os.environ["UE_DEFAULT_MAX_COUNT"] = str(total_from_slices)
+elif args.ue_max is not None:
     os.environ["UE_DEFAULT_MAX_COUNT"] = str(args.ue_max)
+
 if args.ue_embb is not None:
     os.environ["UE_SIMPLE_COUNT_EMBB"] = str(args.ue_embb)
 if args.ue_urllc is not None:
