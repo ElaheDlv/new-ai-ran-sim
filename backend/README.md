@@ -88,7 +88,7 @@ You can explicitly choose how many UEs are subscribed to each slice when using t
 
 ```bash
 python main.py --preset simple --ue-max 10 \
-  --ue-embb 6 --ue-urllc 3 --ue-mmtc 1 --mode headless --steps 120
+  --ue-embb 6 --ue-urllc 3 --ue-mmtc 1 
 ```
 
 - With environment variables:
