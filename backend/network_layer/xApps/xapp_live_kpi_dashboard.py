@@ -4,7 +4,8 @@ import threading
 from collections import defaultdict, deque
 
 # Dash / Plotly
-from dash import Dash, dcc, html, Input, Output
+import dash
+from dash import Dash, dcc, html, Input, Output, State
 import plotly.graph_objs as go
 
 from settings import (
@@ -18,6 +19,7 @@ from settings import (
 MAX_POINTS = 50
 REFRESH_SEC = 0.5
 DASH_PORT = 8061
+SLICE_MOVE_STEP_PRBS = 1  # Treat one RB (paper) as 1 PRBs here
 
 
 # --- Layout helpers (keeps graphs compact) ---
@@ -225,6 +227,30 @@ class xAppLiveKPIDashboard(xAppBase):
                 ),
                 html.Div(id="slice-share-label", style={"marginTop": "4px"}),
 
+                # Discrete RB move controls (Table 3 actions)
+                html.Div(
+                    style={"display": "grid", "gridTemplateColumns": "repeat(4, minmax(0, 1fr))", "gap": "8px", "marginTop": "12px"},
+                    children=[
+                        dcc.Dropdown(
+                            id="cell-selector",
+                            options=(
+                                [{"label": "ALL", "value": "ALL"}]
+                                + [{"label": cid, "value": cid} for cid in sorted(self.cell_list.keys())]
+                            ),
+                            value="ALL",
+                            clearable=False,
+                        ),
+                        html.Button("Keep", id="act-0", n_clicks=0),
+                        html.Button("mMTC→URLLC", id="act-1", n_clicks=0),
+                        html.Button("mMTC→eMBB", id="act-2", n_clicks=0),
+                        html.Button("URLLC→mMTC", id="act-3", n_clicks=0),
+                        html.Button("URLLC→eMBB", id="act-4", n_clicks=0),
+                        html.Button("eMBB→mMTC", id="act-5", n_clicks=0),
+                        html.Button("eMBB→URLLC", id="act-6", n_clicks=0),
+                    ],
+                ),
+                html.Div(id="slice-move-label", style={"marginTop": "4px"}),
+
                 html.Hr(),
 
                 html.Div(style=ROW_1COL, children=[dcc.Graph(id="ue-bitrate")]),
@@ -281,6 +307,60 @@ class xAppLiveKPIDashboard(xAppBase):
                 quotas = {k: int(any_cell.max_dl_prb * shares.get(k, 0.0)) for k in shares}
                 return f"Slice shares set to eMBB={shares['eMBB']:.2f}, URLLC={shares['URLLC']:.2f}, mMTC={shares['mMTC']:.2f}. Example quotas on {any_cell.cell_id}: {quotas} (of max {any_cell.max_dl_prb})."
             return f"Slice shares set to eMBB={shares['eMBB']:.2f}, URLLC={shares['URLLC']:.2f}, mMTC={shares['mMTC']:.2f}."
+
+        @app.callback(
+            Output("slice-move-label", "children"),
+            Input("cell-selector", "value"),
+            Input("act-0", "n_clicks"),
+            Input("act-1", "n_clicks"),
+            Input("act-2", "n_clicks"),
+            Input("act-3", "n_clicks"),
+            Input("act-4", "n_clicks"),
+            Input("act-5", "n_clicks"),
+            Input("act-6", "n_clicks"),
+            prevent_initial_call=True,
+        )
+        def _handle_move(cell_sel, a0, a1, a2, a3, a4, a5, a6):
+            # Determine which button triggered
+            ctx = dash.callback_context
+            if not ctx.triggered:
+                return dash.no_update
+            trig = ctx.triggered[0]["prop_id"].split(".")[0]
+            if trig == "act-0":
+                return "No change applied."
+            # Action mapping: (src, dst)
+            action_map = {
+                "act-1": ("mMTC", "URLLC"),
+                "act-2": ("mMTC", "eMBB"),
+                "act-3": ("URLLC", "mMTC"),
+                "act-4": ("URLLC", "eMBB"),
+                "act-5": ("eMBB", "mMTC"),
+                "act-6": ("eMBB", "URLLC"),
+            }
+            if trig not in action_map:
+                return dash.no_update
+            src, dst = action_map[trig]
+            with self._lock:
+                cells = []
+                if cell_sel == "ALL" or not cell_sel:
+                    cells = list(self.cell_list.values())
+                else:
+                    c = self.cell_list.get(cell_sel)
+                    if c:
+                        cells = [c]
+                applied = 0
+                for c in cells:
+                    if hasattr(c, "adjust_slice_quota_move_rb"):
+                        moved = c.adjust_slice_quota_move_rb(src, dst, prb_step=SLICE_MOVE_STEP_PRBS)
+                        applied += 1 if moved else 0
+                if applied == 0:
+                    return f"Move {src}→{dst}: no change (insufficient quota or invalid cell)."
+                # Preview quotas on first affected cell
+                any_cell = cells[0] if cells else None
+                if any_cell:
+                    preview = any_cell.slice_dl_prb_quota
+                    return f"Moved {SLICE_MOVE_STEP_PRBS} PRBs from {src} to {dst} on {cell_sel if cell_sel!='ALL' else 'ALL cells'}. Example {any_cell.cell_id} quotas: {preview} (max {any_cell.max_dl_prb})."
+                return f"Moved {SLICE_MOVE_STEP_PRBS} PRBs from {src} to {dst}."
 
         @app.callback(
             Output("ue-bitrate", "figure"),

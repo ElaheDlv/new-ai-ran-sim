@@ -194,6 +194,34 @@ class Cell:
                 quotas[s] = int(quotas[s] * scale)
         self.slice_dl_prb_quota = quotas
 
+    def adjust_slice_quota_move_rb(self, src_slice: str, dst_slice: str, prb_step: int = 1):
+        """Move PRBs from src_slice to dst_slice within this cell.
+
+        prb_step: number of PRBs to move (treating a paper's RB as N PRBs).
+        Ensures quotas are non-negative and do not exceed cell.max_dl_prb.
+        """
+        if prb_step <= 0:
+            return False
+        if src_slice == dst_slice:
+            return False
+        # Ensure keys exist
+        for s in (src_slice, dst_slice):
+            if s not in self.slice_dl_prb_quota:
+                self.slice_dl_prb_quota[s] = 0
+        move = min(prb_step, self.slice_dl_prb_quota.get(src_slice, 0))
+        if move <= 0:
+            return False
+        # Apply move
+        self.slice_dl_prb_quota[src_slice] -= move
+        self.slice_dl_prb_quota[dst_slice] = self.slice_dl_prb_quota.get(dst_slice, 0) + move
+        # Cap total to max_dl_prb
+        total_quota = sum(self.slice_dl_prb_quota.values())
+        if total_quota > self.max_dl_prb:
+            # Reduce dst back to respect max
+            overflow = total_quota - self.max_dl_prb
+            self.slice_dl_prb_quota[dst_slice] = max(0, self.slice_dl_prb_quota[dst_slice] - overflow)
+        return True
+
     def allocate_prb(self):
         # QoS-aware Proportional Fair Scheduling (PFS)
 
