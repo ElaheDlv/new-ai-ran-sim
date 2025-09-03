@@ -115,7 +115,8 @@ You can bootstrap AI service subscriptions from the CLI. Subscribed UEs will per
 - One‑liner (headless):
 
 ```bash
-python main.py --preset simple --mode headless --steps 300 \n  --subscribe ultralytics-yolov8-yolov8s:IMSI_0,IMSI_1 \
+python main.py --preset simple --mode headless --steps 300 \
+  --subscribe ultralytics-yolov8-yolov8s:IMSI_0,IMSI_1 \
   --subscribe trpakov-vit-face-expression:IMSI_2 \
   --ensure-ues
 ```
@@ -128,6 +129,51 @@ python main.py --preset simple --mode headless --steps 300 \n  --subscribe ultra
 Notes:
 - In server mode the subscriptions are created after the network initializes; start the simulation from your client as usual.
 - The KPI xApp is independent; you can still open http://localhost:8061 to watch KPIs.
+
+
+### Use the frontend and CLI together
+
+Run the backend in server mode so the WebSocket API is available to the UI, while also pre‑creating AI‑service subscriptions via CLI.
+
+```bash
+python main.py --preset simple --mode server \
+  --subscribe ultralytics-yolov8-yolov8s:IMSI_0,IMSI_1 \
+  --ensure-ues
+
+# In another terminal
+cd frontend
+npm run dev
+```
+
+CLI and UI subscriptions both go to the same manager; duplicates are ignored safely.
+
+### Combine slice mix and subscriptions
+
+You can set the UE slice mix and also subscribe specific UEs to services in the same run.
+
+Server (UI + CLI):
+
+```bash
+python main.py --preset simple --ue-embb 6 --ue-urllc 3 --ue-mmtc 1 --mode server \
+  --subscribe ultralytics-yolov8-yolov8s:IMSI_0,IMSI_1 \
+  --ensure-ues
+```
+
+Headless:
+
+```bash
+python main.py --preset simple --ue-embb 6 --ue-urllc 3 --ue-mmtc 1 --mode headless --steps 300 \
+  --subscribe ultralytics-yolov8-yolov8s:IMSI_0,IMSI_3 \
+  --subscribe trpakov-vit-face-expression:IMSI_2 \
+  --ensure-ues
+```
+
+Additional notes:
+- Total UEs equals the sum of `--ue-embb/--ue-urllc/--ue-mmtc` in simple preset (if `--ue-max` differs, it is aligned to the sum).
+- IMSI→slice assignment (simple preset): first `mMTC` as `IMSI_0..`, then `URLLC`, then remaining as `eMBB`.
+- `--ensure-ues` registers any listed IMSIs that don’t exist yet so they immediately generate traffic.
+- The backend prints the available AI services at startup; prefer those names to avoid Docker pull failures.
+
 
 
 ---
