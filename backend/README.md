@@ -273,6 +273,39 @@ CLI flag quick reference (traces):
 
 ---
 
+## 🎯 Minimal 3‑UE Per‑Slice Trace Demo
+
+Spin up exactly three UEs (one per slice) and replay a trace for each to verify realistic traffic end‑to‑end.
+
+Slice → IMSI mapping in simple preset with `--ue-embb 1 --ue-urllc 1 --ue-mmtc 1`:
+
+- `IMSI_0` → mMTC
+- `IMSI_1` → URLLC
+- `IMSI_2` → eMBB
+
+Server mode (frontend + KPI dashboard):
+
+```bash
+python main.py --preset simple --mode server   --ue-embb 1 --ue-urllc 1 --ue-mmtc 1   --trace-raw-map IMSI_2:backend/assets/traces/embb_04_10.csv:172.30.1.1   --trace-raw-map IMSI_1:backend/assets/traces/urllc_04_10.csv:172.30.1.1   --trace-raw-map IMSI_0:backend/assets/traces/mmtc_04_10.csv:172.30.1.1   --trace-bin 1.0 --trace-speedup 1.0
+
+# In another terminal
+cd frontend
+npm run dev
+```
+
+Headless (no frontend):
+
+```bash
+python main.py --preset simple --mode headless --steps 180   --ue-embb 1 --ue-urllc 1 --ue-mmtc 1   --trace-raw-map IMSI_2:backend/assets/traces/embb_04_10.csv:172.30.1.1   --trace-raw-map IMSI_1:backend/assets/traces/urllc_04_10.csv:172.30.1.1   --trace-raw-map IMSI_0:backend/assets/traces/mmtc_04_10.csv:172.30.1.1   --trace-bin 1.0 --trace-speedup 1.0
+```
+
+Tips:
+
+- The third field in `--trace-raw-map` is the UE IP used in the capture; adjust if your CSVs use a different device IP.
+- In the KPI dashboard, look at “DL buffer (bytes)” (should rise/fall with the trace) and per‑UE “DL Mbps” (served rate). For a strict “only real traffic shown” option, ask to enable the strict mode (no fallback achievable rate).
+
+---
+
 ## 🧠 Example xApps
 
 Example xApps are located in the `network_layer/xApps/` directory:
