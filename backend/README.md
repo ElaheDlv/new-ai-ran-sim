@@ -197,6 +197,57 @@ Slice share semantics:
 
 ---
 
+## 📈 Replay Real App Traces (YouTube/Meet/mMTC)
+
+You can drive realistic per‑UE offered load by attaching CSV traces. Each CSV should have:
+
+- Required columns: `t_s, dl_bytes`
+- Optional: `ul_bytes`
+- `t_s` is seconds (any origin; the loader normalizes to start at 0)
+
+Example rows:
+
+```
+t_s,dl_bytes,ul_bytes
+0,1450000,12000
+1,1210000,11000
+2,1980000,15000
+```
+
+Attach traces at startup:
+
+```bash
+python main.py --preset simple --mode headless --steps 180   --trace-map IMSI_0:/data/embb_youtube.csv   --trace-map IMSI_1:/data/urllc_meet.csv   --trace-speedup 1.0
+```
+
+Or via JSON:
+
+```json
+[
+  {"imsi": "IMSI_0", "file": "/data/embb_youtube.csv", "speedup": 1.0},
+  {"imsi": "IMSI_1", "file": "/data/urllc_meet.csv"}
+]
+```
+
+Run with:
+
+```bash
+python main.py --preset simple --mode headless --steps 180   --trace-json trace_map.json
+```
+
+How it works:
+
+- Each UE enqueues `dl_bytes` from its trace into a per‑UE buffer every step.
+- Cells serve the buffer according to CQI→MCS→PRBs; actual served bitrate is limited by both capacity and buffer.
+- The dashboard’s “DL buffer (bytes)” lets you observe backlog vs service.
+
+Sanity checks:
+
+- Offered_total ≈ Served_total + DL_buffer (non‑negative, within rounding).
+- With high capacity, buffer ~0 and served ≈ offered; with tight capacity, buffer grows roughly at (offered − capacity).
+
+---
+
 ## 🧠 Example xApps
 
 Example xApps are located in the `network_layer/xApps/` directory:

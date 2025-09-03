@@ -320,10 +320,21 @@ class Cell:
             ue_code_rate = ue.downlink_mcs_data["target_code_rate"]
             ue_dl_prb = self.prb_ue_allocation_dict[ue.ue_imsi]["downlink"]
             # TODO: uplink bitrate
-            dl_bitrate = estimate_throughput(
+            achievable_bps = estimate_throughput(
                 ue_modulation_order, ue_code_rate, ue_dl_prb
             )
-            ue.set_downlink_bitrate(dl_bitrate)
+            # If a buffer exists, serve at min(achievable, buffer/Δt)
+            dt = settings.SIM_STEP_TIME_DEFAULT
+            if hasattr(ue, "dl_buffer_bytes") and ue.dl_buffer_bytes is not None:
+                max_bps_from_buffer = (ue.dl_buffer_bytes * 8) / dt if dt > 0 else achievable_bps
+                served_bps = min(achievable_bps, max_bps_from_buffer)
+                served_bytes = int(served_bps * dt / 8)
+                if served_bytes > 0:
+                    ue.dl_buffer_bytes = max(0, ue.dl_buffer_bytes - served_bytes)
+                    ue.served_dl_bytes_total += served_bytes
+                ue.set_downlink_bitrate(served_bps)
+            else:
+                ue.set_downlink_bitrate(achievable_bps)
             # TODO: downlink and uplink latency
 
     def deregister_ue(self, ue):

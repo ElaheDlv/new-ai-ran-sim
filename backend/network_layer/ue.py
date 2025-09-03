@@ -65,6 +65,16 @@ class UE:
         self.ai_service_request_countdonw = settings.UE_AI_SERVICE_REQUEST_COUNTDOWN
         self.ai_service_responses = {}
 
+        # Trace-driven traffic fields (optional)
+        self.dl_buffer_bytes = 0
+        self.ul_buffer_bytes = 0
+        self.offered_dl_bytes_total = 0
+        self.served_dl_bytes_total = 0
+        self._trace_samples = None  # list of (t_s, dl_bytes, ul_bytes)
+        self._trace_cursor = 0
+        self._trace_speedup = 1.0
+        self._trace_started = False
+
     def __repr__(self):
         return f"UE(ue_imsi={self.ue_imsi}, \
             operation_region={self.operation_region}, \
@@ -256,6 +266,37 @@ class UE:
 
         if len(self.serving_cell_history) > settings.UE_SERVING_CELL_HISTORY_LENGTH:
             self.serving_cell_history.pop(0)
+
+    # ---- Trace-driven offered load helpers ----
+    def attach_trace(self, samples, speedup: float = 1.0):
+        """Attach a list of (t_s, dl_bytes, ul_bytes) samples to replay.
+        speedup > 1.0 replays faster; < 1.0 slower.
+        """
+        if not samples:
+            self._trace_samples = None
+            self._trace_cursor = 0
+            return
+        self._trace_samples = samples
+        self._trace_cursor = 0
+        self._trace_speedup = max(1e-6, float(speedup))
+        self._trace_started = True
+
+    def _replay_trace_into_buffer(self, delta_time):
+        if not self._trace_samples:
+            return
+        # Simulation time in seconds
+        sim_t = self.simulation_engine.sim_step * delta_time
+        # Effective trace time progressed
+        target_t = sim_t * self._trace_speedup
+        n = len(self._trace_samples)
+        while self._trace_cursor < n and self._trace_samples[self._trace_cursor][0] <= target_t:
+            _, dl, ul = self._trace_samples[self._trace_cursor]
+            if dl > 0:
+                self.dl_buffer_bytes += dl
+                self.offered_dl_bytes_total += dl
+            if ul > 0:
+                self.ul_buffer_bytes += ul
+            self._trace_cursor += 1
 
     def deregister(self):
         if self.current_bs is None:
@@ -474,6 +515,8 @@ class UE:
 
     def step(self, delta_time):
         self.move_towards_target(delta_time)
+        # Enqueue trace-driven offered load (if any)
+        self._replay_trace_into_buffer(delta_time)
         self.monitor_signal_strength()
         self.check_rrc_meas_events_to_monitor()
         self.request_ai_service()
@@ -532,4 +575,7 @@ class UE:
                 }
                 for subscription_id, response in self.ai_service_responses.items()
             },
+            "dl_buffer_bytes": self.dl_buffer_bytes,
+            "offered_dl_bytes_total": self.offered_dl_bytes_total,
+            "served_dl_bytes_total": self.served_dl_bytes_total,
         }

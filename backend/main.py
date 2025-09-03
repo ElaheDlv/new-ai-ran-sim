@@ -41,6 +41,25 @@ parser.add_argument(
     "--mode", choices=["server", "headless"], default="server", help="Run as WebSocket server or headless loop",
 )
 parser.add_argument("--steps", type=int, default=120, help="Headless: number of steps to run")
+parser.add_argument(
+    "--trace-map",
+    action="append",
+    help=(
+        "Attach CSV traffic traces to UEs. Repeatable. Format: IMSI_#:path.csv (t_s,dl_bytes[,ul_bytes])."
+    ),
+)
+parser.add_argument(
+    "--trace-json",
+    help=(
+        "JSON file with a list of {\"imsi\": \"IMSI_#\", \"file\": \"path.csv\", \"speedup\": 1.0}."
+    ),
+)
+parser.add_argument(
+    "--trace-speedup",
+    type=float,
+    default=1.0,
+    help="Global speedup factor for traces (optional; per-item overrides).",
+)
 args, unknown = parser.parse_known_args()
 
 if args.preset:
@@ -95,6 +114,36 @@ def _parse_subscribe_specs():
     return specs
 
 SUBSCRIBE_SPECS = _parse_subscribe_specs()
+
+# -------------------------------------------------------------
+# Parse trace attachments
+# -------------------------------------------------------------
+TRACE_SPECS = []  # list of {"imsi": str, "file": str, "speedup": float}
+def _parse_trace_specs():
+    specs = []
+    if args.trace_map:
+        for s in args.trace_map:
+            try:
+                imsi, path = s.split(":", 1)
+                imsi = imsi.strip(); path = path.strip()
+                if imsi and path:
+                    specs.append({"imsi": imsi, "file": path, "speedup": args.trace_speedup})
+            except ValueError:
+                print(f"[main] Ignoring invalid --trace-map spec: {s}")
+    if args.trace_json:
+        try:
+            import json
+            with open(args.trace_json, "r") as f:
+                data = json.load(f)
+            for item in data:
+                imsi = item.get("imsi"); path = item.get("file"); sp = float(item.get("speedup", args.trace_speedup))
+                if imsi and path:
+                    specs.append({"imsi": imsi, "file": path, "speedup": sp})
+        except Exception as e:
+            print(f"[main] Failed to read --trace-json: {e}")
+    return specs
+
+TRACE_SPECS = _parse_trace_specs()
 
 # Load .env (won't override already-set env)
 dotenv.load_dotenv()
@@ -187,6 +236,8 @@ async def websocket_handler(websocket):
     knowledge_router = KnowledgeRouter()
     knowledge_router.import_routes(simulation_engine)
     _print_available_ai_services(knowledge_router)
+    # Attach traces in server mode (after network init)
+    _attach_traces_if_any(simulation_engine)
     # Bootstrap CLI-defined subscriptions (server mode)
     await _bootstrap_subscriptions_if_any(simulation_engine, knowledge_router)
     while True:
@@ -237,6 +288,7 @@ async def main():
         kr = KnowledgeRouter(); kr.import_routes(eng)
         _print_available_ai_services(kr)
         await _bootstrap_subscriptions_if_any(eng, kr)
+        _attach_traces_if_any(eng)
         for _ in range(args.steps):
             eng.sim_step += 1
             eng.step(settings.SIM_STEP_TIME_DEFAULT)
@@ -258,3 +310,26 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+def _attach_traces_if_any(simulation_engine):
+    if not TRACE_SPECS:
+        return
+    from utils import load_csv_trace
+    from settings.slice_config import NETWORK_SLICE_EMBB_NAME
+    for spec in TRACE_SPECS:
+        imsi = spec["imsi"]; path = spec["file"]; speed = float(spec.get("speedup", 1.0))
+        ue = simulation_engine.ue_list.get(imsi)
+        if ue is None:
+            subs = settings.CORE_UE_SUBSCRIPTION_DATA.get(imsi, [NETWORK_SLICE_EMBB_NAME])
+            simulation_engine.register_ue(imsi, subs, register_slice=subs[0])
+            ue = simulation_engine.ue_list.get(imsi)
+        if ue is None:
+            print(f"[main] Could not attach trace to {imsi}: UE not present")
+            continue
+        try:
+            samples = load_csv_trace(path)
+            ue.attach_trace(samples, speed)
+            print(f"[main] Attached trace {path} (n={len(samples)}) to {imsi}, speedup={speed}")
+        except Exception as e:
+            print(f"[main] Failed to load trace for {imsi} from {path}: {e}")
