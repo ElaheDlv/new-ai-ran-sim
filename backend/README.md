@@ -214,13 +214,13 @@ t_s,dl_bytes,ul_bytes
 2,1980000,15000
 ```
 
-Attach traces at startup:
+Attach pre‑aggregated traces at startup:
 
 ```bash
 python main.py --preset simple --mode headless --steps 180   --trace-map IMSI_0:/data/embb_youtube.csv   --trace-map IMSI_1:/data/urllc_meet.csv   --trace-speedup 1.0
 ```
 
-Or via JSON:
+Or via JSON (pre‑aggregated):
 
 ```json
 [
@@ -245,6 +245,31 @@ Sanity checks:
 
 - Offered_total ≈ Served_total + DL_buffer (non‑negative, within rounding).
 - With high capacity, buffer ~0 and served ≈ offered; with tight capacity, buffer grows roughly at (offered − capacity).
+
+
+Where to place files:
+
+- Put traces under `backend/assets/traces/` (any path is fine; this is a convenient default).
+- Each CSV you pass via `--trace-map` or `--trace-raw-map` is attached to one UE (one file → one IMSI).
+- You can reuse the same file for multiple UEs by repeating the flag.
+
+Combine with frontend and AI services:
+
+- Run the backend in server mode with trace flags; start the frontend normally. The KPI dashboard continues to work.
+- You can also preload edge AI‑service subscriptions in the same run, e.g.:
+
+```bash
+python main.py --preset simple --mode server   --trace-raw-map IMSI_0:backend/assets/traces/embb_04_10.csv:172.30.1.1   --subscribe ultralytics-yolov8-yolov8s:IMSI_1   --ensure-ues
+```
+
+CLI flag quick reference (traces):
+
+- `--trace-map IMSI_#:file.csv`               Pre‑aggregated CSV (t_s, dl_bytes[, ul_bytes])
+- `--trace-json path.json`                    JSON list of {imsi, file, speedup}
+- `--trace-raw-map IMSI_#:raw.csv:UE_IP`      Raw packet CSV; auto‑aggregate by `--trace-bin`
+- `--trace-bin <seconds>`                     Bin size for raw CSV aggregation (default 1.0)
+- `--trace-speedup <x>`                       Time scaling for trace playback (default 1.0)
+
 
 ---
 

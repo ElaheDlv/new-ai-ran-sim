@@ -36,4 +36,4 @@ from .docker_utils import (
     remove_ai_service_in_docker,
     send_post_request,
 )
-from .traffic_trace import load_csv_trace
+from .traffic_trace import load_csv_trace, load_raw_packet_csv
