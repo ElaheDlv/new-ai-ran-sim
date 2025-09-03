@@ -269,6 +269,47 @@ def _print_available_ai_services(knowledge_router):
         print(f"[main] Failed to list AI services: {e}")
 
 
+
+
+def _attach_traces_if_any(simulation_engine):
+    if not TRACE_SPECS and not RAW_TRACE_SPECS:
+        return
+    from utils import load_csv_trace, load_raw_packet_csv
+    from settings.slice_config import NETWORK_SLICE_EMBB_NAME
+    # RAW packet traces first (aggregate on the fly)
+    for spec in RAW_TRACE_SPECS:
+        imsi = spec["imsi"]; path = spec["file"]; speed = float(spec.get("speedup", 1.0))
+        ue = simulation_engine.ue_list.get(imsi)
+        if ue is None:
+            subs = settings.CORE_UE_SUBSCRIPTION_DATA.get(imsi, [NETWORK_SLICE_EMBB_NAME])
+            simulation_engine.register_ue(imsi, subs, register_slice=subs[0])
+            ue = simulation_engine.ue_list.get(imsi)
+        if ue is None:
+            print(f"[main] Could not attach RAW trace to {imsi}: UE not present")
+            continue
+        try:
+            samples = load_raw_packet_csv(path, ue_ip=spec["ue_ip"], bin_s=float(spec.get("bin_s", 1.0)))
+            ue.attach_trace(samples, speed)
+            print(f"[main] Attached RAW trace {path} (n={len(samples)}) to {imsi}, speedup={speed}")
+        except Exception as e:
+            print(f"[main] Failed to load RAW trace for {imsi} from {path}: {e}")
+    # Pre-aggregated traces
+    for spec in TRACE_SPECS:
+        imsi = spec["imsi"]; path = spec["file"]; speed = float(spec.get("speedup", 1.0))
+        ue = simulation_engine.ue_list.get(imsi)
+        if ue is None:
+            subs = settings.CORE_UE_SUBSCRIPTION_DATA.get(imsi, [NETWORK_SLICE_EMBB_NAME])
+            simulation_engine.register_ue(imsi, subs, register_slice=subs[0])
+            ue = simulation_engine.ue_list.get(imsi)
+        if ue is None:
+            print(f"[main] Could not attach trace to {imsi}: UE not present")
+            continue
+        try:
+            samples = load_csv_trace(path)
+            ue.attach_trace(samples, speed)
+            print(f"[main] Attached trace {path} (n={len(samples)}) to {imsi}, speedup={speed}")
+        except Exception as e:
+            print(f"[main] Failed to load trace for {imsi} from {path}: {e}")
 async def websocket_handler(websocket):
     WebSocketSingleton().set_websocket(websocket)
     simulation_engine = SimulationEngine()
@@ -352,43 +393,3 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 
-
-def _attach_traces_if_any(simulation_engine):
-    if not TRACE_SPECS and not RAW_TRACE_SPECS:
-        return
-    from utils import load_csv_trace, load_raw_packet_csv
-    from settings.slice_config import NETWORK_SLICE_EMBB_NAME
-    # RAW packet traces first (aggregate on the fly)
-    for spec in RAW_TRACE_SPECS:
-        imsi = spec["imsi"]; path = spec["file"]; speed = float(spec.get("speedup", 1.0))
-        ue = simulation_engine.ue_list.get(imsi)
-        if ue is None:
-            subs = settings.CORE_UE_SUBSCRIPTION_DATA.get(imsi, [NETWORK_SLICE_EMBB_NAME])
-            simulation_engine.register_ue(imsi, subs, register_slice=subs[0])
-            ue = simulation_engine.ue_list.get(imsi)
-        if ue is None:
-            print(f"[main] Could not attach RAW trace to {imsi}: UE not present")
-            continue
-        try:
-            samples = load_raw_packet_csv(path, ue_ip=spec["ue_ip"], bin_s=float(spec.get("bin_s", 1.0)))
-            ue.attach_trace(samples, speed)
-            print(f"[main] Attached RAW trace {path} (n={len(samples)}) to {imsi}, speedup={speed}")
-        except Exception as e:
-            print(f"[main] Failed to load RAW trace for {imsi} from {path}: {e}")
-    # Pre-aggregated traces
-    for spec in TRACE_SPECS:
-        imsi = spec["imsi"]; path = spec["file"]; speed = float(spec.get("speedup", 1.0))
-        ue = simulation_engine.ue_list.get(imsi)
-        if ue is None:
-            subs = settings.CORE_UE_SUBSCRIPTION_DATA.get(imsi, [NETWORK_SLICE_EMBB_NAME])
-            simulation_engine.register_ue(imsi, subs, register_slice=subs[0])
-            ue = simulation_engine.ue_list.get(imsi)
-        if ue is None:
-            print(f"[main] Could not attach trace to {imsi}: UE not present")
-            continue
-        try:
-            samples = load_csv_trace(path)
-            ue.attach_trace(samples, speed)
-            print(f"[main] Attached trace {path} (n={len(samples)}) to {imsi}, speedup={speed}")
-        except Exception as e:
-            print(f"[main] Failed to load trace for {imsi} from {path}: {e}")

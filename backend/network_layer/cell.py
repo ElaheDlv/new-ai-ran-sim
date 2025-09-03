@@ -323,9 +323,9 @@ class Cell:
             achievable_bps = estimate_throughput(
                 ue_modulation_order, ue_code_rate, ue_dl_prb
             )
-            # If a buffer exists, serve at min(achievable, buffer/Δt)
-            dt = settings.SIM_STEP_TIME_DEFAULT
-            if hasattr(ue, "dl_buffer_bytes") and ue.dl_buffer_bytes is not None:
+            # If a trace is attached, serve buffer; otherwise fall back to achievable rate
+            if getattr(ue, "_trace_samples", None):
+                dt = settings.SIM_STEP_TIME_DEFAULT
                 max_bps_from_buffer = (ue.dl_buffer_bytes * 8) / dt if dt > 0 else achievable_bps
                 served_bps = min(achievable_bps, max_bps_from_buffer)
                 served_bytes = int(served_bps * dt / 8)
