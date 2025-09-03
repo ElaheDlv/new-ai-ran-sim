@@ -323,7 +323,7 @@ class Cell:
             achievable_bps = estimate_throughput(
                 ue_modulation_order, ue_code_rate, ue_dl_prb
             )
-            # If a trace is attached, serve buffer; otherwise fall back to achievable rate
+            # If strict-real-traffic is enabled, only serve real offered load; else fallback to achievable
             if getattr(ue, "_trace_samples", None):
                 dt = settings.SIM_STEP_TIME_DEFAULT
                 max_bps_from_buffer = (ue.dl_buffer_bytes * 8) / dt if dt > 0 else achievable_bps
@@ -333,6 +333,8 @@ class Cell:
                     ue.dl_buffer_bytes = max(0, ue.dl_buffer_bytes - served_bytes)
                     ue.served_dl_bytes_total += served_bytes
                 ue.set_downlink_bitrate(served_bps)
+            elif getattr(settings, "SIM_TRAFFIC_STRICT_REAL_ONLY", False):
+                ue.set_downlink_bitrate(0)
             else:
                 ue.set_downlink_bitrate(achievable_bps)
             # TODO: downlink and uplink latency

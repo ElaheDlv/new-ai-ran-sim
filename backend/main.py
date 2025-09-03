@@ -61,6 +61,12 @@ parser.add_argument(
     help="Global speedup factor for traces (optional; per-item overrides).",
 )
 
+parser.add_argument(
+    "--strict-real-traffic",
+    action="store_true",
+    help="If set, only real offered traffic (traces/AI-service) is shown; no fallback achievable rate.",
+)
+
 
 parser.add_argument(
     "--trace-raw-map",
@@ -99,6 +105,8 @@ if args.ue_urllc is not None:
     os.environ["UE_SIMPLE_COUNT_URLLC"] = str(args.ue_urllc)
 if args.ue_mmtc is not None:
     os.environ["UE_SIMPLE_COUNT_MMTC"] = str(args.ue_mmtc)
+if args.strict_real_traffic:
+    os.environ["SIM_TRAFFIC_STRICT_REAL_ONLY"] = "1"
 
 # -------------------------------------------------------------
 # Parse subscription specifications from CLI / file (deferred use)

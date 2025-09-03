@@ -269,6 +269,7 @@ CLI flag quick reference (traces):
 - `--trace-raw-map IMSI_#:raw.csv:UE_IP`      Raw packet CSV; auto‑aggregate by `--trace-bin`
 - `--trace-bin <seconds>`                     Bin size for raw CSV aggregation (default 1.0)
 - `--trace-speedup <x>`                       Time scaling for trace playback (default 1.0)
+- `--strict-real-traffic`                     Only show real served traffic (no fallback achievable rate)
 
 
 ---
