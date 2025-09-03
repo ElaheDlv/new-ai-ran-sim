@@ -456,6 +456,13 @@ class UE:
                 + size * 8 / self.downlink_bitrate * 1000 * 2
             )
 
+            if response is None:
+                # Service not deployed/ready or subscription missing for this BS/UE
+                logger.warning(
+                    f"UE {self.ue_imsi}: AI service '{ai_service_subscription.ai_service_name}' not ready or not deployed; skipping this request cycle."
+                )
+                continue
+
             logger.info(
                 f"UE {self.ue_imsi}: AI service response: {response.get('response', 'No response field.')}, "
             )

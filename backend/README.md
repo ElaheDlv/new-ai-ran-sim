@@ -107,6 +107,29 @@ Notes:
 - Omit the slice counts to keep the default randomized distribution.
 - Runtime spawn is still dynamic (1–2 per step in simple mode); slice membership is fixed per IMSI.
 
+
+### Generate real AI‑service traffic (no frontend)
+
+You can bootstrap AI service subscriptions from the CLI. Subscribed UEs will periodically send HTTP requests to the deployed edge container, and logs will include process times and endpoints.
+
+- One‑liner (headless):
+
+```bash
+python main.py --preset simple --mode headless --steps 300 \n  --subscribe ultralytics-yolov8-yolov8s:IMSI_0,IMSI_1 \
+  --subscribe trpakov-vit-face-expression:IMSI_2 \
+  --ensure-ues
+```
+
+- Flags:
+  - `--subscribe name:IMSI_A,IMSI_B` (repeatable): create a subscription for service `name` and the listed UEs.
+  - `--subscribe-file path.json`: JSON list of `{"service": name, "ues": [..]}` objects.
+  - `--ensure-ues`: auto‑register any listed UE IDs that don’t exist yet.
+
+Notes:
+- In server mode the subscriptions are created after the network initializes; start the simulation from your client as usual.
+- The KPI xApp is independent; you can still open http://localhost:8061 to watch KPIs.
+
+
 ---
 
 ## 📊 Live KPI Dashboard xApp

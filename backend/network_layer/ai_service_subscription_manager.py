@@ -197,4 +197,9 @@ class AIServiceSubscriptionManager:
 
     def step(self):
         for subscription in self.subscriptions.values():
+            # Attach subscription to UEs that appear later (ensures UE will generate traffic)
+            for ue_id in subscription.ue_id_list:
+                ue = self.ue_list.get(ue_id)
+                if ue is not None and subscription.subscription_id not in ue.ai_service_subscriptions:
+                    ue.add_ai_service_subscription(subscription)
             subscription.step()

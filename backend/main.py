@@ -16,6 +16,28 @@ parser.add_argument("--ue-embb", type=int, help="Simple preset: number of UEs wi
 parser.add_argument("--ue-urllc", type=int, help="Simple preset: number of UEs with URLLC subscription")
 parser.add_argument("--ue-mmtc", type=int, help="Simple preset: number of UEs with mMTC subscription")
 parser.add_argument(
+    "--subscribe",
+    "-S",
+    action="append",
+    help=(
+        "Create AI service subscriptions at startup. Repeatable. "
+        "Format: service_name:IMSI_0,IMSI_1 (no spaces)."
+    ),
+)
+parser.add_argument(
+    "--subscribe-file",
+    help=(
+        "Path to JSON file with a list of {\"service\": name, \"ues\": [..]} objects."
+    ),
+)
+parser.add_argument(
+    "--ensure-ues",
+    action="store_true",
+    help=(
+        "If set, auto-register any UE IDs mentioned in --subscribe that are not present yet."
+    ),
+)
+parser.add_argument(
     "--mode", choices=["server", "headless"], default="server", help="Run as WebSocket server or headless loop",
 )
 parser.add_argument("--steps", type=int, default=120, help="Headless: number of steps to run")
@@ -42,6 +64,37 @@ if args.ue_urllc is not None:
     os.environ["UE_SIMPLE_COUNT_URLLC"] = str(args.ue_urllc)
 if args.ue_mmtc is not None:
     os.environ["UE_SIMPLE_COUNT_MMTC"] = str(args.ue_mmtc)
+
+# -------------------------------------------------------------
+# Parse subscription specifications from CLI / file (deferred use)
+# -------------------------------------------------------------
+SUBSCRIBE_SPECS = []  # list of {"service": name, "ues": ["IMSI_0", ...]}
+def _parse_subscribe_specs():
+    specs = []
+    if args.subscribe:
+        for s in args.subscribe:
+            try:
+                name, ue_csv = s.split(":", 1)
+                ues = [u.strip() for u in ue_csv.split(",") if u.strip()]
+                if name and ues:
+                    specs.append({"service": name.strip(), "ues": ues})
+            except ValueError:
+                print(f"[main] Ignoring invalid --subscribe spec: {s}")
+    if args.subscribe_file:
+        try:
+            import json
+            with open(args.subscribe_file, "r") as f:
+                data = json.load(f)
+            for item in data:
+                name = item.get("service")
+                ues = item.get("ues", [])
+                if name and isinstance(ues, list) and ues:
+                    specs.append({"service": name, "ues": ues})
+        except Exception as e:
+            print(f"[main] Failed to read --subscribe-file: {e}")
+    return specs
+
+SUBSCRIBE_SPECS = _parse_subscribe_specs()
 
 # Load .env (won't override already-set env)
 dotenv.load_dotenv()
@@ -84,6 +137,48 @@ COMMAND_HANDLERS = {
 }
 
 
+async def _bootstrap_subscriptions_if_any(simulation_engine, knowledge_router):
+    """Create CLI-defined AI service subscriptions and optionally ensure UEs exist."""
+    if not SUBSCRIBE_SPECS:
+        return
+    # Optionally register missing UEs referenced by subscriptions
+    if args.ensure_ues:
+        from settings.slice_config import NETWORK_SLICE_EMBB_NAME
+        for spec in SUBSCRIBE_SPECS:
+            for ue_id in spec["ues"]:
+                if ue_id not in simulation_engine.ue_list:
+                    subs = settings.CORE_UE_SUBSCRIPTION_DATA.get(ue_id, [NETWORK_SLICE_EMBB_NAME])
+                    simulation_engine.register_ue(
+                        ue_imsi=ue_id,
+                        subscribed_slices=subs,
+                        register_slice=subs[0],
+                    )
+    # Create subscriptions
+    for spec in SUBSCRIBE_SPECS:
+        name = spec["service"]
+        ues = spec["ues"]
+        ai_data = knowledge_router.query_knowledge(f"/ai_services/{name}/raw")
+        if not ai_data:
+            print(f"[main] Unknown AI service '{name}'. Skipping subscription.")
+            continue
+        simulation_engine.ric.ai_service_subscription_manager.create_subscription(
+            ai_service_name=name,
+            ai_service_data=ai_data,
+            ue_id_list=ues,
+        )
+
+
+def _print_available_ai_services(knowledge_router):
+    try:
+        overview = knowledge_router.query_knowledge("/ai_services")
+        if isinstance(overview, str):
+            print("\n===== Available AI Services =====\n")
+            print(overview)
+            print("\n================================\n")
+    except Exception as e:
+        print(f"[main] Failed to list AI services: {e}")
+
+
 async def websocket_handler(websocket):
     WebSocketSingleton().set_websocket(websocket)
     simulation_engine = SimulationEngine()
@@ -91,6 +186,9 @@ async def websocket_handler(websocket):
     simulation_engine.network_setup()
     knowledge_router = KnowledgeRouter()
     knowledge_router.import_routes(simulation_engine)
+    _print_available_ai_services(knowledge_router)
+    # Bootstrap CLI-defined subscriptions (server mode)
+    await _bootstrap_subscriptions_if_any(simulation_engine, knowledge_router)
     while True:
         message = await websocket.recv()
         try:
@@ -135,6 +233,10 @@ async def main():
         eng = SimulationEngine()
         eng.reset_network()
         eng.network_setup()
+        # Bootstrap CLI-defined subscriptions (headless mode)
+        kr = KnowledgeRouter(); kr.import_routes(eng)
+        _print_available_ai_services(kr)
+        await _bootstrap_subscriptions_if_any(eng, kr)
         for _ in range(args.steps):
             eng.sim_step += 1
             eng.step(settings.SIM_STEP_TIME_DEFAULT)
