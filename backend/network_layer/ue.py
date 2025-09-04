@@ -466,7 +466,14 @@ class UE:
             }
 
     def step(self, delta_time):
-        self.move_towards_target(delta_time)
+        # Freeze mobility: keep UEs stationary when enabled
+        if not getattr(settings, "SIM_FREEZE_MOBILITY", False):
+            self.move_towards_target(delta_time)
+        else:
+            # ensure target stays current to avoid tiny drifts
+            if self.target_x != self.position_x or self.target_y != self.position_y:
+                self.set_target(self.position_x, self.position_y)
+
         self.monitor_signal_strength()
         self.check_rrc_meas_events_to_monitor()
         self.request_ai_service()

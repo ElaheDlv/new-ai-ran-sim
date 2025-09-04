@@ -109,6 +109,35 @@ Notes:
 
 ---
 
+
+---
+
+## 🧪 Isolate PRB Effects (Freeze Mobility)
+
+If you want KPI changes to come only from PRB allocation (and not from UE movement changing SINR/CQI/MCS), freeze mobility so UEs stay stationary.
+
+Enable via environment variable (works in both server and headless modes):
+
+```bash
+# From backend/
+export SIM_FREEZE_MOBILITY=1
+python main.py --preset simple --mode server \
+  --ue-embb 1 --ue-urllc 1 --ue-mmtc 1 \
+  --strict-real-traffic \
+  --trace-raw-map IMSI_2:assets/traces/embb_04_10.csv:172.30.1.1 \
+  --trace-raw-map IMSI_1:assets/traces/urllc_04_10.csv:172.30.1.1 \
+  --trace-raw-map IMSI_0:assets/traces/mmtc_04_10.csv:172.30.1.1
+```
+
+What this does:
+
+- Sets all UE speeds to 0 at creation/registration and pins their targets to current positions.
+- With positions fixed, radio KPIs (SINR/CQI/MCS) stay constant. DL Mbps then changes only when you adjust PRB allocation (slice shares/Move‑RB/per‑UE cap) or the offered load (traces/AI services).
+
+Tip: You usually don’t need to freeze radio; freezing mobility is sufficient in this simulator to keep the radio constant.
+
+---
+
 ## 📊 Live KPI Dashboard xApp
 
 Drop-in xApp that starts a Dash server at `http://localhost:8061` and streams per‑UE and per‑cell KPIs.

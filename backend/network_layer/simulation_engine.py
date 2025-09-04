@@ -117,6 +117,9 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
             speed_mps=speed_mps,
             simulation_engine=self,
         )
+        if getattr(settings, "SIM_FREEZE_MOBILITY", False):
+            ue.speed_mps = 0
+            ue.set_target(ue.position_x, ue.position_y)
         if not ue.power_up():
             logger.error(
                 f"UE {ue.ue_imsi} power up procedures failed. Cannot register UE."
@@ -254,6 +257,9 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
             speed_mps=speed_mps,
             simulation_engine=self,
         )
+        if getattr(settings, "SIM_FREEZE_MOBILITY", False):
+            ue.speed_mps = 0
+            ue.set_target(ue.position_x, ue.position_y)
         # Power up (attach+auth registration via core network)
         powered = ue.power_up()
         if powered:
