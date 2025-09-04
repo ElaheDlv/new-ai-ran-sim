@@ -116,17 +116,15 @@ Notes:
 
 If you want KPI changes to come only from PRB allocation (and not from UE movement changing SINR/CQI/MCS), freeze mobility so UEs stay stationary.
 
-Enable via environment variable (works in both server and headless modes):
+Enable via CLI flag or environment variable (works in both server and headless modes):
 
 ```bash
 # From backend/
 export SIM_FREEZE_MOBILITY=1
 python main.py --preset simple --mode server \
-  --ue-embb 1 --ue-urllc 1 --ue-mmtc 1 \
-  --strict-real-traffic \
-  --trace-raw-map IMSI_2:assets/traces/embb_04_10.csv:172.30.1.1 \
-  --trace-raw-map IMSI_1:assets/traces/urllc_04_10.csv:172.30.1.1 \
-  --trace-raw-map IMSI_0:assets/traces/mmtc_04_10.csv:172.30.1.1
+  --ue-max 3 --ue-embb 1 --ue-urllc 1 --ue-mmtc 1 \
+  --freeze-mobility
+
 ```
 
 What this does:

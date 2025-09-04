@@ -16,6 +16,11 @@ parser.add_argument("--ue-embb", type=int, help="Simple preset: number of UEs wi
 parser.add_argument("--ue-urllc", type=int, help="Simple preset: number of UEs with URLLC subscription")
 parser.add_argument("--ue-mmtc", type=int, help="Simple preset: number of UEs with mMTC subscription")
 parser.add_argument(
+    "--freeze-mobility",
+    action="store_true",
+    help="Freeze UE mobility (speed=0; pin targets to current position).",
+)
+parser.add_argument(
     "--mode", choices=["server", "headless"], default="server", help="Run as WebSocket server or headless loop",
 )
 parser.add_argument("--steps", type=int, default=120, help="Headless: number of steps to run")
@@ -42,6 +47,8 @@ if args.ue_urllc is not None:
     os.environ["UE_SIMPLE_COUNT_URLLC"] = str(args.ue_urllc)
 if args.ue_mmtc is not None:
     os.environ["UE_SIMPLE_COUNT_MMTC"] = str(args.ue_mmtc)
+if args.freeze_mobility:
+    os.environ["SIM_FREEZE_MOBILITY"] = "1"
 
 # Load .env (won't override already-set env)
 dotenv.load_dotenv()
