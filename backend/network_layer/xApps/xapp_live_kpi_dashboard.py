@@ -261,13 +261,15 @@ class xAppLiveKPIDashboard(xAppBase):
                 html.Hr(),
 
                 html.Div(style=ROW_1COL, children=[dcc.Graph(id="ue-bitrate")]),
-                html.Div(style=ROW_2COL, children=[
-                    dcc.Graph(id="ue-sinr"),
-                    dcc.Graph(id="ue-cqi"),
-                ]),
+                # Move PRB plots just below bitrate for quick visibility
                 html.Div(style=ROW_2COL, children=[
                     dcc.Graph(id="ue-prb-granted"),
                     dcc.Graph(id="ue-prb-requested"),
+                ]),
+                # Place SINR/CQI below PRB plots
+                html.Div(style=ROW_2COL, children=[
+                    dcc.Graph(id="ue-sinr"),
+                    dcc.Graph(id="ue-cqi"),
                 ]),
                 html.Div(style=ROW_1COL, children=[dcc.Graph(id="cell-load")]),
                 html.Div(style=ROW_1COL, children=[dcc.Graph(id="ue-buffer")]),
