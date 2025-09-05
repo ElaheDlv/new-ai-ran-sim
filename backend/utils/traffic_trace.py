@@ -320,17 +320,26 @@ def validate_traces_configuration(
     logger = logging.getLogger(logger_name)
     results: Dict[str, Any] = {"all_valid": True, "agg": {}, "raw": {}}
 
+    # ANSI colors for visibility (safe to display in most terminals)
+    C_RESET = "\033[0m"
+    C_GREEN = "\033[92m"
+    C_RED = "\033[91m"
+    C_CYAN = "\033[96m"
+    C_YELLOW = "\033[93m"
+    C_BOLD = "\033[1m"
+
+    logger.info(f"{C_CYAN}{C_BOLD}=== TRACE VALIDATION START ==={C_RESET}")
+
     trace_map = trace_map or {}
     for imsi, path in trace_map.items():
         r = validate_preaggregated_trace_csv(path)
         results["agg"][imsi] = r
         if not r.get("valid"):
             results["all_valid"] = False
-            logger.error(f"Trace (agg) for {imsi}: {path} -> INVALID: {r.get('error')}")
+            logger.error(f"{C_RED}Trace (agg) for {imsi}: {path} -> INVALID: {r.get('error')}{C_RESET}")
         else:
-            logger.info(
-                f"Trace (agg) for {imsi}: {path} -> OK (cols={r['columns']}, sample_rows={r['sample_count']})"
-            )
+            logger.info(f"{C_GREEN}Trace (agg) for {imsi}: {path} -> OK{C_RESET} "
+                        f"(cols={r['columns']}, sample_rows={r['sample_count']})")
 
     raw_map = raw_map or []
     for item in raw_map:
@@ -342,15 +351,15 @@ def validate_traces_configuration(
         results["raw"][imsi] = r
         if not r.get("valid"):
             results["all_valid"] = False
-            logger.error(f"Trace (raw) for {imsi}: {path} -> INVALID: {r.get('error')}")
+            logger.error(f"{C_RED}Trace (raw) for {imsi}: {path} -> INVALID: {r.get('error')}{C_RESET}")
         else:
             ip_note = f", ue_ip_auto={r['detected_ue_ip']}" if r.get("detected_ue_ip") else ""
-            logger.info(
-                f"Trace (raw) for {imsi}: {path} -> OK (cols={r['columns']}, sample_rows={r['sample_count']}{ip_note})"
-            )
+            logger.info(f"{C_GREEN}Trace (raw) for {imsi}: {path} -> OK{C_RESET} "
+                        f"(cols={r['columns']}, sample_rows={r['sample_count']}{ip_note})")
 
     if not results["all_valid"]:
-        logger.warning("Some traces invalid. Simulation will continue but affected UEs may have no replayed traffic.")
+        logger.warning(f"{C_YELLOW}Some traces invalid. Simulation will continue but affected UEs may have no replayed traffic.{C_RESET}")
     else:
-        logger.info("All configured traces look valid.")
+        logger.info(f"{C_GREEN}All configured traces look valid.{C_RESET}")
+    logger.info(f"{C_CYAN}{C_BOLD}=== TRACE VALIDATION END ==={C_RESET}")
     return results

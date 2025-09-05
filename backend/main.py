@@ -58,6 +58,11 @@ parser.add_argument(
     action="store_true",
     help="Only show served traffic from traces (no fallback achievable rate)",
 )
+parser.add_argument(
+    "--trace-validate-only",
+    action="store_true",
+    help="Validate configured trace files and exit",
+)
 args, unknown = parser.parse_known_args()
 
 if args.preset:
@@ -230,6 +235,9 @@ async def websocket_handler(websocket):
 
 
 async def main():
+    # Optional: validate-only mode to isolate and view checks with no other output
+    if args.trace_validate_only:
+        return
     # Headless mode: run simulation loop without WebSocket server
     if args.mode == "headless":
         eng = SimulationEngine()
