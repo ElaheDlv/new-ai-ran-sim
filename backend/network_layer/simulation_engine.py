@@ -34,6 +34,47 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
 
         self.logs = []
 
+        # Mapping of slice_name -> {"samples": list[(t,dl,ul)], "speedup": float}
+        self.slice_trace_map = {}
+
+    # -------- Trace-by-slice support --------
+    def set_slice_trace(self, slice_name: str, samples, speedup: float = 1.0):
+        if not samples:
+            return
+        self.slice_trace_map[str(slice_name)] = {
+            "samples": samples,
+            "speedup": float(speedup),
+        }
+        # Attach to existing UEs of this slice (if not already attached)
+        for ue in self.ue_list.values():
+            self._maybe_attach_slice_trace(ue)
+
+    def configure_slice_traces(self, mapping: dict):
+        """Set multiple slice traces at once; mapping: {slice: (samples, speedup)}"""
+        for s, spec in (mapping or {}).items():
+            if isinstance(spec, tuple) and len(spec) == 2:
+                samples, sp = spec
+            elif isinstance(spec, dict):
+                samples, sp = spec.get("samples"), spec.get("speedup", 1.0)
+            else:
+                continue
+            self.set_slice_trace(s, samples, sp)
+
+    def _maybe_attach_slice_trace(self, ue: UE):
+        try:
+            s = getattr(ue, "slice_type", None)
+            if not s:
+                return
+            spec = self.slice_trace_map.get(str(s))
+            if not spec:
+                return
+            # If UE already has a trace, keep it; otherwise attach slice default
+            if getattr(ue, "_trace_samples", None):
+                return
+            ue.attach_trace(spec.get("samples"), float(spec.get("speedup", 1.0)))
+        except Exception:
+            return
+
     def add_base_station(self, bs):
         assert isinstance(bs, BaseStation)
         assert bs.simulation_engine == self
@@ -136,6 +177,8 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
         assert ue.ue_imsi not in self.ue_list
         self.ue_list[ue.ue_imsi] = ue
         self.global_UE_counter += 1
+        # Attach default trace for this UE's slice, if configured
+        self._maybe_attach_slice_trace(ue)
 
     def spawn_UEs(self):
         current_ue_count = len(self.ue_list.keys())
@@ -266,6 +309,8 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
                 ue, requested_slice=attach_slice
             )
             self.ue_list[ue_imsi] = ue
+            # Attach default trace for this UE's slice, if configured
+            self._maybe_attach_slice_trace(ue)
             logger.info(
                 f"UE {ue_imsi} added and registered at runtime. Subscribed to slices: {subscribed_slices}. Registered on: {attach_slice}"
             )

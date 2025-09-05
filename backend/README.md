@@ -313,6 +313,9 @@ CLI flag quick reference (traces):
 - `--trace-bin <seconds>`                     Bin size for raw CSV aggregation (default 1.0)
 - `--trace-speedup <x>`                       Time scaling for trace playback (default 1.0)
 - `--strict-real-traffic`                     Only show real served traffic (no fallback achievable rate)
+- `--trace-slice-dir <path>`                  Auto‑attach per‑slice traces found in a directory (embb*.csv, urllc*.csv, mmtc*.csv)
+- `--trace-slice-embb/--trace-slice-urllc/--trace-slice-mmtc`  Explicit files for each slice (applies to ALL UEs of that slice)
+- `--trace-slice-ueip <IP>`                   UE IP for raw packet CSVs (used to separate DL/UL); auto‑detected if omitted
 
 
 ---
@@ -347,6 +350,30 @@ Tips:
 
 - The third field in `--trace-raw-map` is the UE IP used in the capture; adjust if your CSVs use a different device IP.
 - In the KPI dashboard, look at “DL buffer (bytes)” (should rise/fall with the trace) and per‑UE “DL Mbps” (served rate). For a strict “only real traffic shown” option, ask to enable the strict mode (no fallback achievable rate).
+
+### New: Apply a directory of per‑slice traces to all UEs
+
+If your traces are stored under `backend/assets/traces` and named like `embb_*.csv`, `urllc_*.csv`, `mmtc_*.csv`, you can auto‑attach them to every UE according to its slice (both existing and newly‑spawned UEs). For raw packet CSVs, pass the device IP used in the capture (or rely on auto‑detection).
+
+Headless
+```bash
+python main.py --preset simple --mode headless --steps 180 \
+  --trace-slice-dir backend/assets/traces \
+  --trace-slice-ueip 172.30.1.250 \
+  --trace-bin 1.0 --trace-speedup 1.0 --strict-real-traffic
+```
+
+Server
+```bash
+python main.py --preset simple --mode server \
+  --trace-slice-dir backend/assets/traces \
+  --trace-slice-ueip 172.30.1.250 \
+  --trace-bin 1.0 --trace-speedup 1.0 --strict-real-traffic
+```
+
+Notes:
+- Omit `--trace-slice-ueip` to auto‑detect the UE IP from the CSVs (picks the most common `Source` IP).
+- The mapping is applied per slice and persists for all future UE spawns. You can still mix per‑IMSI traces using `--trace-map`.
 
 ---
 

@@ -82,6 +82,23 @@ parser.add_argument(
     default=1.0,
     help="Bin size for raw packet CSV aggregation in seconds (default 1.0)",
 )
+parser.add_argument(
+    "--trace-slice-dir",
+    help=(
+        "Directory containing per-slice traces; auto-picks files matching embb*.csv, urllc*.csv, mmtc*.csv. "
+        "If not given, you can specify explicit files via --trace-slice-embb/--trace-slice-urllc/--trace-slice-mmtc."
+    ),
+)
+parser.add_argument("--trace-slice-embb", help="CSV to attach to ALL eMBB UEs")
+parser.add_argument("--trace-slice-urllc", help="CSV to attach to ALL URLLC UEs")
+parser.add_argument("--trace-slice-mmtc", help="CSV to attach to ALL mMTC UEs")
+parser.add_argument(
+    "--trace-slice-ueip",
+    help=(
+        "UE IP used in raw packet CSVs for DL/UL classification (e.g., 172.30.1.1). "
+        "If omitted, defaults to 172.30.1.1."
+    ),
+)
 args, unknown = parser.parse_known_args()
 
 if args.preset:
@@ -193,6 +210,38 @@ def _parse_raw_trace_specs():
 
 RAW_TRACE_SPECS = _parse_raw_trace_specs()
 
+# Slice-level traces used for every UE of a given slice
+SLICE_TRACE_SPECS = {}
+
+def _parse_slice_trace_specs():
+    import os, glob
+    specs = {}
+    # explicit files have priority
+    if args.trace_slice_embb:
+        specs["eMBB"] = args.trace_slice_embb
+    if args.trace_slice_urllc:
+        specs["URLLC"] = args.trace_slice_urllc
+    if args.trace_slice_mmtc:
+        specs["mMTC"] = args.trace_slice_mmtc
+    # directory auto-detect (fallback for any missing slice)
+    dirpath = args.trace_slice_dir
+    # If no explicit dir but the standard path exists, use it as a convenience
+    default_dir = os.path.join(os.path.dirname(__file__), "assets", "traces")
+    if not dirpath and os.path.isdir(default_dir):
+        dirpath = default_dir
+    if dirpath and os.path.isdir(dirpath):
+        def pick(globpat):
+            hits = sorted(glob.glob(os.path.join(dirpath, globpat)))
+            return hits[0] if hits else None
+        specs.setdefault("eMBB", pick("embb*.csv"))
+        specs.setdefault("URLLC", pick("urllc*.csv"))
+        specs.setdefault("mMTC", pick("mmtc*.csv"))
+    # Drop Nones
+    specs = {k: v for k, v in specs.items() if v}
+    return specs
+
+SLICE_TRACE_SPECS = _parse_slice_trace_specs()
+
 
 # Load .env (won't override already-set env)
 dotenv.load_dotenv()
@@ -268,7 +317,9 @@ def _print_available_ai_services(knowledge_router):
 
 def _attach_traces_if_any(simulation_engine):
     if not TRACE_SPECS and not RAW_TRACE_SPECS:
-        return
+        # Still allow slice-level traces
+        if not SLICE_TRACE_SPECS:
+            return
     from utils import load_csv_trace, load_raw_packet_csv
     from settings.slice_config import NETWORK_SLICE_EMBB_NAME
     # RAW packet traces first (aggregate on the fly)
@@ -305,6 +356,46 @@ def _attach_traces_if_any(simulation_engine):
             print(f"[main] Attached trace {path} (n={len(samples)}) to {imsi}, speedup={speed}")
         except Exception as e:
             print(f"[main] Failed to load trace for {imsi} from {path}: {e}")
+    # Slice-level traces: apply to all existing and future UEs per slice
+    if SLICE_TRACE_SPECS:
+        try:
+            mapping = {}
+            for slice_name, path in SLICE_TRACE_SPECS.items():
+                try:
+                    # Heuristic: try raw-packet loader first (most common for these files),
+                    # fall back to pre-aggregated loader if that fails.
+                    ueip = args.trace_slice_ueip
+                    if ueip is None:
+                        # Quick auto-detect: pick the most common Source IP in the CSV
+                        try:
+                            import csv
+                            from collections import Counter
+                            cnt = Counter()
+                            with open(path, 'r') as f:
+                                reader = csv.DictReader(f)
+                                for i, row in enumerate(reader):
+                                    s = row.get('Source') or row.get('source')
+                                    if s:
+                                        cnt[s] += 1
+                                    if i > 20000:
+                                        break
+                            if cnt:
+                                ueip = cnt.most_common(1)[0][0]
+                        except Exception:
+                            ueip = None
+                    ueip = ueip or "172.30.1.1"
+                    try:
+                        samples = load_raw_packet_csv(path, ue_ip=ueip, bin_s=float(args.trace_bin))
+                    except Exception:
+                        samples = load_csv_trace(path)
+                    mapping[slice_name] = (samples, float(args.trace_speedup))
+                    print(f"[main] Loaded slice-trace for {slice_name}: {path} (n={len(samples)})")
+                except Exception as e:
+                    print(f"[main] Failed to load slice-trace for {slice_name} from {path}: {e}")
+            if mapping:
+                simulation_engine.configure_slice_traces(mapping)
+        except Exception as e:
+            print(f"[main] Could not configure slice traces: {e}")
 async def websocket_handler(websocket):
     # Import server-only helpers lazily to avoid unnecessary hard deps in headless mode
     from utils.websocket_utils import (
