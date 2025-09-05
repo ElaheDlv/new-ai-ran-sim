@@ -78,3 +78,9 @@ try:
     TRACE_OVERHEAD_BYTES = int(os.getenv("TRACE_OVERHEAD_BYTES", "70"))
 except Exception:
     TRACE_OVERHEAD_BYTES = 70
+
+# Trace debug controls
+TRACE_DEBUG = os.getenv("TRACE_DEBUG", "0") in ("1", "true", "True")
+TRACE_DEBUG_IMSI = set([
+    s.strip() for s in os.getenv("TRACE_DEBUG_IMSI", "").split(",") if s.strip()
+])

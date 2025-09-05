@@ -63,6 +63,16 @@ parser.add_argument(
     action="store_true",
     help="Validate configured trace files and exit",
 )
+parser.add_argument(
+    "--trace-debug",
+    action="store_true",
+    help="Enable verbose trace replay debugging",
+)
+parser.add_argument(
+    "--trace-debug-imsi",
+    type=str,
+    help="Comma-separated IMSIs to debug (if omitted, all)",
+)
 args, unknown = parser.parse_known_args()
 
 if args.preset:
@@ -130,6 +140,10 @@ if args.trace_bin is not None:
     os.environ["TRACE_BIN"] = str(args.trace_bin)
 if args.trace_overhead_bytes is not None:
     os.environ["TRACE_OVERHEAD_BYTES"] = str(args.trace_overhead_bytes)
+if args.trace_debug:
+    os.environ["TRACE_DEBUG"] = "1"
+if args.trace_debug_imsi:
+    os.environ["TRACE_DEBUG_IMSI"] = args.trace_debug_imsi
 
 # Load .env (won't override already-set env)
 dotenv.load_dotenv()
@@ -247,9 +261,24 @@ async def main():
             eng.sim_step += 1
             eng.step(settings.SIM_STEP_TIME_DEFAULT)
             await asyncio.sleep(settings.SIM_STEP_TIME_DEFAULT)
-        print(
-            f"Headless run completed. BS: {list(eng.base_station_list.keys())}, Cells: {list(eng.cell_list.keys())}"
-        )
+        print(f"Headless run completed. BS: {list(eng.base_station_list.keys())}, Cells: {list(eng.cell_list.keys())}")
+        # Optional trace replay summary
+        try:
+            if getattr(settings, "TRACE_DEBUG", False):
+                print("\n=== Trace Replay Summary ===")
+                for ue in eng.ue_list.values():
+                    if getattr(ue, "_trace_samples", None) is None:
+                        continue
+                    total_samples = len(ue._trace_samples)
+                    total_dl = getattr(ue, "_trace_enqueued_dl_total", 0)
+                    total_served = getattr(ue, "_trace_served_dl_total", 0)
+                    buf = ue.dl_buffer_bytes
+                    ok = (total_dl == total_served + buf)
+                    status = "OK" if ok else "MISMATCH"
+                    print(f"{ue.ue_imsi}: samples={total_samples} enq_dl={total_dl}B served_dl={total_served}B remaining_buf={buf}B [{status}]")
+                print("===========================\n")
+        except Exception:
+            pass
         return
 
     # Server mode (default)

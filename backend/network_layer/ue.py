@@ -75,6 +75,13 @@ class UE:
         # Keep both achievable capacity and served rates (bps)
         self.achievable_downlink_bitrate = 0
         self.served_downlink_bitrate = 0
+        # Trace debug counters
+        self._trace_enqueued_dl_total = 0
+        self._trace_enqueued_ul_total = 0
+        self._trace_served_dl_total = 0
+        self._trace_enqueued_dl_last = 0
+        self._trace_enqueued_ul_last = 0
+        self._trace_served_dl_last = 0
 
     def __repr__(self):
         return f"UE(ue_imsi={self.ue_imsi}, \
@@ -291,6 +298,27 @@ class UE:
         self._trace_speedup = max(1e-6, float(speedup))
         self.dl_buffer_bytes = 0
         self.ul_buffer_bytes = 0
+        # Reset counters and log a brief summary when debugging
+        self._trace_enqueued_dl_total = 0
+        self._trace_enqueued_ul_total = 0
+        self._trace_served_dl_total = 0
+        self._trace_enqueued_dl_last = 0
+        self._trace_enqueued_ul_last = 0
+        self._trace_served_dl_last = 0
+        try:
+            if self._trace_samples:
+                total_dl = sum(int(s[1] or 0) for s in self._trace_samples)
+                total_ul = sum(int(s[2] or 0) for s in self._trace_samples)
+                duration = float(self._trace_samples[-1][0] - self._trace_samples[0][0]) if len(self._trace_samples) > 1 else 0.0
+                if getattr(settings, "TRACE_DEBUG", False) and (
+                    not getattr(settings, "TRACE_DEBUG_IMSI", set())
+                    or self.ue_imsi in getattr(settings, "TRACE_DEBUG_IMSI", set())
+                ):
+                    logger.info(
+                        f"[trace] {self.ue_imsi}: attached {len(self._trace_samples)} samples, duration={duration:.3f}s, total_dl={total_dl}B, total_ul={total_ul}B, speedup={self._trace_speedup}x"
+                    )
+        except Exception:
+            pass
 
     def _tick_trace(self, delta_time: float):
         if not self._trace_samples:
@@ -305,11 +333,28 @@ class UE:
         self._trace_clock_s += dt * self._trace_speedup
         n = len(self._trace_samples)
         # Enqueue all samples up to current clock
+        step_dl = 0
+        step_ul = 0
         while self._trace_idx < n and self._trace_samples[self._trace_idx][0] <= self._trace_clock_s:
             _, dl, ul = self._trace_samples[self._trace_idx]
             self.dl_buffer_bytes += int(dl or 0)
             self.ul_buffer_bytes += int(ul or 0)
             self._trace_idx += 1
+            step_dl += int(dl or 0)
+            step_ul += int(ul or 0)
+        # Update counters and optionally log
+        if step_dl or step_ul:
+            self._trace_enqueued_dl_last = step_dl
+            self._trace_enqueued_ul_last = step_ul
+            self._trace_enqueued_dl_total += step_dl
+            self._trace_enqueued_ul_total += step_ul
+            if getattr(settings, "TRACE_DEBUG", False) and (
+                not getattr(settings, "TRACE_DEBUG_IMSI", set())
+                or self.ue_imsi in getattr(settings, "TRACE_DEBUG_IMSI", set())
+            ):
+                logger.info(
+                    f"[trace] {self.ue_imsi}: t={self._trace_clock_s:.2f}s idx={self._trace_idx}/{n} enq_dl={step_dl}B enq_ul={step_ul}B buf_dl={self.dl_buffer_bytes}B"
+                )
 
     def move_towards_target(self, delta_time):
         if self.target_x is not None and self.target_y is not None:

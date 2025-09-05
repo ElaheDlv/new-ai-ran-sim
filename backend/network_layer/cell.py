@@ -1,4 +1,5 @@
 import math
+import logging
 import settings
 from utils import dist_between, estimate_throughput
 
@@ -337,6 +338,19 @@ class Cell:
                 # Dequeue from buffer
                 ue.dl_buffer_bytes = max(0, ue.dl_buffer_bytes - take)
                 ue.served_downlink_bitrate = served_bps
+                # Trace debug counters
+                try:
+                    ue._trace_served_dl_last = take
+                    ue._trace_served_dl_total += take
+                    if getattr(settings, "TRACE_DEBUG", False) and (
+                        not getattr(settings, "TRACE_DEBUG_IMSI", set())
+                        or ue.ue_imsi in getattr(settings, "TRACE_DEBUG_IMSI", set())
+                    ):
+                        logging.getLogger("trace_replay").info(
+                            f"[trace] {ue.ue_imsi}: served_dl={take}B step_cap={cap_bytes}B buf_after={ue.dl_buffer_bytes}B rate={served_bps/1e6:.3f}Mbps"
+                        )
+                except Exception:
+                    pass
                 # Strict mode: only show served traffic
                 if getattr(settings, "STRICT_REAL_TRAFFIC", False):
                     ue.set_downlink_bitrate(served_bps)
