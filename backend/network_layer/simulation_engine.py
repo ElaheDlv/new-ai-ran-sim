@@ -2,7 +2,11 @@ import asyncio
 import json
 import random
 
-from utils import get_random_ue_operational_region
+from utils import (
+    get_random_ue_operational_region,
+    load_csv_trace,
+    load_raw_packet_csv,
+)
 from .core_network import CoreNetwork
 from .base_station import BaseStation
 from .cell import Cell
@@ -29,6 +33,8 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
         self.sim_step = 0
 
         self.logs = []
+        # cache loaded traces by file path
+        self._trace_cache = {}
 
     def add_base_station(self, bs):
         assert isinstance(bs, BaseStation)
@@ -135,6 +141,62 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
         assert ue.ue_imsi not in self.ue_list
         self.ue_list[ue.ue_imsi] = ue
         self.global_UE_counter += 1
+        # Attach trace if mapped for this IMSI
+        self._attach_trace_if_mapped(ue)
+
+    def _attach_trace_if_mapped(self, ue: UE):
+        # Prefer raw packet mapping if present for this IMSI
+        raw_map = getattr(settings, "TRACE_RAW_MAP", []) or []
+        raw_entry = None
+        for item in raw_map:
+            if isinstance(item, dict) and item.get("imsi") == ue.ue_imsi:
+                raw_entry = item
+                break
+        if raw_entry:
+            path = raw_entry.get("file")
+            ue_ip = raw_entry.get("ue_ip")
+            bin_s = getattr(settings, "TRACE_BIN", 1.0)
+            overhead = getattr(settings, "TRACE_OVERHEAD_BYTES", 70)
+            if not path:
+                return
+            cache_key = ("raw", path, ue_ip or "AUTO", float(bin_s))
+            if cache_key not in self._trace_cache:
+                try:
+                    samples = load_raw_packet_csv(
+                        path, ue_ip=ue_ip, bin_s=float(bin_s), overhead_sub_bytes=int(overhead)
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to load RAW trace for {ue.ue_imsi} from {path}: {e}")
+                    samples = []
+                self._trace_cache[cache_key] = samples
+            else:
+                samples = self._trace_cache[cache_key]
+            if samples:
+                speed = getattr(settings, "TRACE_SPEEDUP", 1.0)
+                ue.attach_trace(samples, speed)
+                logger.info(
+                    f"Attached RAW trace to {ue.ue_imsi} from {path} (samples={len(samples)}, bin={bin_s}s, speedup={speed}, ue_ip={ue_ip or 'AUTO'})"
+                )
+            return
+
+        # Fallback to pre-aggregated CSV mapping
+        trace_map = getattr(settings, "TRACE_MAP", {}) or {}
+        path = trace_map.get(ue.ue_imsi)
+        if not path:
+            return
+        if ("agg", path) not in self._trace_cache:
+            try:
+                samples = load_csv_trace(path)
+            except Exception as e:
+                logger.error(f"Failed to load trace for {ue.ue_imsi} from {path}: {e}")
+                samples = []
+            self._trace_cache[("agg", path)] = samples
+        else:
+            samples = self._trace_cache[("agg", path)]
+        if samples:
+            speed = getattr(settings, "TRACE_SPEEDUP", 1.0)
+            ue.attach_trace(samples, speed)
+            logger.info(f"Attached trace to {ue.ue_imsi} from {path} (samples={len(samples)}, speedup={speed})")
 
     def spawn_UEs(self):
         current_ue_count = len(self.ue_list.keys())
@@ -268,6 +330,8 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
                 ue, requested_slice=attach_slice
             )
             self.ue_list[ue_imsi] = ue
+            # Attach trace if mapped
+            self._attach_trace_if_mapped(ue)
             logger.info(
                 f"UE {ue_imsi} added and registered at runtime. Subscribed to slices: {subscribed_slices}. Registered on: {attach_slice}"
             )

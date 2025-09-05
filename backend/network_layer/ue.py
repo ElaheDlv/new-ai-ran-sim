@@ -65,6 +65,17 @@ class UE:
         self.ai_service_request_countdonw = settings.UE_AI_SERVICE_REQUEST_COUNTDOWN
         self.ai_service_responses = {}
 
+        # Real-traffic trace state
+        self.dl_buffer_bytes = 0
+        self.ul_buffer_bytes = 0
+        self._trace_samples = None  # List[(t_s, dl_bytes, ul_bytes)]
+        self._trace_idx = 0
+        self._trace_clock_s = 0.0
+        self._trace_speedup = 1.0
+        # Keep both achievable capacity and served rates (bps)
+        self.achievable_downlink_bitrate = 0
+        self.served_downlink_bitrate = 0
+
     def __repr__(self):
         return f"UE(ue_imsi={self.ue_imsi}, \
             operation_region={self.operation_region}, \
@@ -266,6 +277,40 @@ class UE:
         self.set_current_cell(None)
         self.connected = False
 
+    # ---------------------------
+    # Trace replay helpers
+    # ---------------------------
+    def attach_trace(self, samples, speedup: float = 1.0):
+        """Attach a pre-aggregated CSV trace to this UE.
+        samples: list of (t_s, dl_bytes, ul_bytes)
+        speedup: time scaling (1.0 = realtime)
+        """
+        self._trace_samples = list(samples) if samples else None
+        self._trace_idx = 0
+        self._trace_clock_s = 0.0
+        self._trace_speedup = max(1e-6, float(speedup))
+        self.dl_buffer_bytes = 0
+        self.ul_buffer_bytes = 0
+
+    def _tick_trace(self, delta_time: float):
+        if not self._trace_samples:
+            return
+        try:
+            dt = float(delta_time)
+        except Exception:
+            dt = 0.0
+        if dt <= 0:
+            return
+        # Advance trace playback clock according to speedup
+        self._trace_clock_s += dt * self._trace_speedup
+        n = len(self._trace_samples)
+        # Enqueue all samples up to current clock
+        while self._trace_idx < n and self._trace_samples[self._trace_idx][0] <= self._trace_clock_s:
+            _, dl, ul = self._trace_samples[self._trace_idx]
+            self.dl_buffer_bytes += int(dl or 0)
+            self.ul_buffer_bytes += int(ul or 0)
+            self._trace_idx += 1
+
     def move_towards_target(self, delta_time):
         if self.target_x is not None and self.target_y is not None:
             dist_to_target = self.dist_to_target
@@ -466,6 +511,8 @@ class UE:
             }
 
     def step(self, delta_time):
+        # First, update any trace playback (enqueue offered traffic into buffers)
+        self._tick_trace(delta_time)
         # Freeze mobility: keep UEs stationary when enabled
         if not getattr(settings, "SIM_FREEZE_MOBILITY", False):
             self.move_towards_target(delta_time)
@@ -502,9 +549,13 @@ class UE:
             "time_remaining": self.time_remaining,
             "serving_cell_history": [cell_id for cell_id in self.serving_cell_history],
             "downlink_bitrate": self.downlink_bitrate,
+            "achievable_downlink_bitrate": self.achievable_downlink_bitrate,
+            "served_downlink_bitrate": self.served_downlink_bitrate,
             "downlink_latency": self.downlink_latency,
             "uplink_bitrate": self.uplink_bitrate,
             "uplink_latency": self.uplink_latency,
+            "dl_buffer_bytes": self.dl_buffer_bytes,
+            "ul_buffer_bytes": self.ul_buffer_bytes,
             "downlink_received_power_dBm_dict": {
                 cell_id: {
                     "received_power_dBm": cell_data["received_power_dBm"],

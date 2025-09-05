@@ -136,6 +136,50 @@ Tip: You usually don’t need to freeze radio; freezing mobility is sufficient i
 
 ---
 
+## 📈 Replay CSV Traces (per‑UE offered load)
+
+Attach a CSV trace to any spawned UE so its offered DL traffic is replayed and served subject to radio capacity and PRB allocation.
+
+- CSV format: header with `t_s,dl_bytes[,ul_bytes]` (timestamps in seconds; UL optional).
+- CLI flags:
+  - `--trace-map IMSI_#:path/to/file.csv` (repeatable per IMSI)
+  - `--trace-speedup <x>` (scale time; default 1.0)
+  - `--strict-real-traffic` (show only served traffic; no fallback capacity)
+  - `--trace-raw-map IMSI_#:path/to/raw.csv[:UE_IP]` (Wireshark/PCAP CSV; optional UE_IP to classify DL/UL)
+  - `--trace-bin <seconds>` (aggregation bin for raw CSV; default 1.0)
+  - `--trace-overhead-bytes <n>` (subtract per-packet bytes in raw CSV; default 70)
+
+Examples:
+
+```bash
+# Headless demo with traces for two UEs
+python main.py --preset simple --mode headless --steps 180 \
+  --trace-map IMSI_0:backend/assets/traces/embb_example.csv \
+  --trace-map IMSI_1:backend/assets/traces/urllc_example.csv \
+  --trace-speedup 1.0 --strict-real-traffic
+
+# Server mode (use with frontend/KPI xApp)
+python main.py --preset simple --mode server \
+  --trace-map IMSI_0:backend/assets/traces/embb_example.csv
+
+# Using raw packet CSVs (Wireshark export)
+python main.py --preset simple --mode headless --steps 180 \
+  --trace-raw-map IMSI_2:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
+  --trace-raw-map IMSI_1:backend/assets/traces/urllc_04_10.csv:172.30.1.1 \
+  --trace-bin 1.0 --trace-overhead-bytes 70 --trace-speedup 1.0 --strict-real-traffic
+```
+
+How it works:
+- Each UE with a trace enqueues `dl_bytes` into a per‑UE buffer at the traced times (scaled by `--trace-speedup`).
+- Cells compute capacity from MCS×PRBs and serve from the buffer up to that capacity each step.
+- With `--strict-real-traffic`, UE DL Mbps equals served traffic; otherwise, empty buffers show achievable capacity.
+
+Notes:
+- Traces are attached by IMSI on spawn/registration. Ensure those IMSIs exist during the run (use `--ue-max`/slice counts with simple preset).
+- Place CSVs anywhere; `backend/assets/traces/` is a convenient location.
+
+---
+
 ## 📊 Live KPI Dashboard xApp
 
 Drop-in xApp that starts a Dash server at `http://localhost:8061` and streams per‑UE and per‑cell KPIs.

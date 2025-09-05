@@ -320,10 +320,36 @@ class Cell:
             ue_code_rate = ue.downlink_mcs_data["target_code_rate"]
             ue_dl_prb = self.prb_ue_allocation_dict[ue.ue_imsi]["downlink"]
             # TODO: uplink bitrate
-            dl_bitrate = estimate_throughput(
+            cap_bps = estimate_throughput(
                 ue_modulation_order, ue_code_rate, ue_dl_prb
             )
-            ue.set_downlink_bitrate(dl_bitrate)
+            # Save achievable capacity (bps)
+            ue.achievable_downlink_bitrate = cap_bps
+            # If a trace is attached, serve from buffer up to capacity
+            served_bps = cap_bps
+            dt = getattr(settings, "SIM_STEP_TIME_DEFAULT", 1) or 1
+            if getattr(ue, "_trace_samples", None) is not None:
+                # How many bytes can we serve this step given capacity?
+                cap_bytes = int((cap_bps * dt) / 8)
+                take = min(max(0, int(ue.dl_buffer_bytes)), max(0, cap_bytes))
+                # Compute served bitrate
+                served_bps = (take * 8) / dt if dt > 0 else 0
+                # Dequeue from buffer
+                ue.dl_buffer_bytes = max(0, ue.dl_buffer_bytes - take)
+                ue.served_downlink_bitrate = served_bps
+                # Strict mode: only show served traffic
+                if getattr(settings, "STRICT_REAL_TRAFFIC", False):
+                    ue.set_downlink_bitrate(served_bps)
+                else:
+                    # If buffer had data, show served; otherwise show capacity
+                    if take > 0:
+                        ue.set_downlink_bitrate(served_bps)
+                    else:
+                        ue.set_downlink_bitrate(cap_bps)
+            else:
+                # No trace: show capacity
+                ue.served_downlink_bitrate = cap_bps
+                ue.set_downlink_bitrate(cap_bps)
             # TODO: downlink and uplink latency
 
     def deregister_ue(self, ue):

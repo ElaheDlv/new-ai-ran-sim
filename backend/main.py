@@ -24,6 +24,40 @@ parser.add_argument(
     "--mode", choices=["server", "headless"], default="server", help="Run as WebSocket server or headless loop",
 )
 parser.add_argument("--steps", type=int, default=120, help="Headless: number of steps to run")
+# Trace replay options
+parser.add_argument(
+    "--trace-map",
+    action="append",
+    help="Attach CSV trace to a UE: IMSI:file.csv (repeatable)",
+)
+parser.add_argument(
+    "--trace-speedup",
+    type=float,
+    default=None,
+    help="Time scaling for trace playback (1.0 = realtime)",
+)
+parser.add_argument(
+    "--trace-raw-map",
+    action="append",
+    help="Attach raw packet CSV to a UE: IMSI:file.csv[:UE_IP] (repeatable)",
+)
+parser.add_argument(
+    "--trace-bin",
+    type=float,
+    default=None,
+    help="Bin size (seconds) for raw packet CSV aggregation (default 1.0)",
+)
+parser.add_argument(
+    "--trace-overhead-bytes",
+    type=int,
+    default=None,
+    help="Subtract this many bytes per packet in raw CSV (default 70)",
+)
+parser.add_argument(
+    "--strict-real-traffic",
+    action="store_true",
+    help="Only show served traffic from traces (no fallback achievable rate)",
+)
 args, unknown = parser.parse_known_args()
 
 if args.preset:
@@ -49,6 +83,48 @@ if args.ue_mmtc is not None:
     os.environ["UE_SIMPLE_COUNT_MMTC"] = str(args.ue_mmtc)
 if args.freeze_mobility:
     os.environ["SIM_FREEZE_MOBILITY"] = "1"
+
+# Trace mapping and options (export via env before importing settings)
+if args.trace_map:
+    trace_map = {}
+    for item in args.trace_map:
+        # Expect format IMSI:file.csv
+        if not item or ":" not in item:
+            continue
+        imsi, path = item.split(":", 1)
+        imsi = imsi.strip()
+        path = path.strip()
+        if imsi and path:
+            trace_map[imsi] = path
+    if trace_map:
+        os.environ["TRACE_MAP_JSON"] = json.dumps(trace_map)
+if args.trace_speedup is not None:
+    os.environ["TRACE_SPEEDUP"] = str(args.trace_speedup)
+if args.strict_real_traffic:
+    os.environ["STRICT_REAL_TRAFFIC"] = "1"
+if args.trace_raw_map:
+    raw_items = []
+    for item in args.trace_raw_map:
+        # Format: IMSI:file.csv[:UE_IP]
+        if not item or ":" not in item:
+            continue
+        parts = item.split(":")
+        if len(parts) < 2:
+            continue
+        imsi, path = parts[0].strip(), ":".join(parts[1:]).strip()
+        ue_ip = None
+        # If there are exactly 3 parts, last is ue_ip; if >3, assume last is ue_ip and the middle joined were part of path
+        if len(parts) >= 3:
+            ue_ip = parts[-1].strip()
+            path = ":".join(parts[1:-1]).strip()
+        if imsi and path:
+            raw_items.append({"imsi": imsi, "file": path, "ue_ip": ue_ip})
+    if raw_items:
+        os.environ["TRACE_RAW_MAP_JSON"] = json.dumps(raw_items)
+if args.trace_bin is not None:
+    os.environ["TRACE_BIN"] = str(args.trace_bin)
+if args.trace_overhead_bytes is not None:
+    os.environ["TRACE_OVERHEAD_BYTES"] = str(args.trace_overhead_bytes)
 
 # Load .env (won't override already-set env)
 dotenv.load_dotenv()
