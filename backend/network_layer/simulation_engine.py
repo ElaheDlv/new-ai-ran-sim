@@ -132,13 +132,18 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
         position_y = random.randint(
             ue_operation_region["min_y"], ue_operation_region["max_y"]
         )
-        target_x = random.randint(
-            ue_operation_region["min_x"], ue_operation_region["max_x"]
-        )
-        target_y = random.randint(
-            ue_operation_region["min_y"], ue_operation_region["max_y"]
-        )
-        speed_mps = random.randint(settings.UE_speed_mps_MIN, settings.UE_speed_mps_MAX)
+        if settings.SIM_UE_MOBILITY_ENABLED:
+            target_x = random.randint(
+                ue_operation_region["min_x"], ue_operation_region["max_x"]
+            )
+            target_y = random.randint(
+                ue_operation_region["min_y"], ue_operation_region["max_y"]
+            )
+            speed_mps = random.randint(settings.UE_speed_mps_MIN, settings.UE_speed_mps_MAX)
+        else:
+            target_x = position_x
+            target_y = position_y
+            speed_mps = 0
 
         # get the next available UE IMSI
         new_ue_IMSI = None
@@ -210,7 +215,7 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
         ue_to_remove = []
         for ue in self.ue_list.values():
             ue.step(delta_time)
-            if ue.target_reached:
+            if settings.SIM_UE_MOBILITY_ENABLED and ue.target_reached:
                 logger.info(
                     f"UE {ue.ue_imsi} reached target: ({ue.target_x}, {ue.target_y})"
                 )
@@ -286,9 +291,14 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
         op_region = {"min_x": 0, "min_y": 0, "max_x": 2000, "max_y": 2000}
         pos_x = random.randint(op_region["min_x"], op_region["max_x"])
         pos_y = random.randint(op_region["min_y"], op_region["max_y"])
-        target_x = random.randint(op_region["min_x"], op_region["max_x"])
-        target_y = random.randint(op_region["min_y"], op_region["max_y"])
-        speed_mps = random.randint(settings.UE_speed_mps_MIN, settings.UE_speed_mps_MAX)
+        if settings.SIM_UE_MOBILITY_ENABLED:
+            target_x = random.randint(op_region["min_x"], op_region["max_x"])
+            target_y = random.randint(op_region["min_y"], op_region["max_y"])
+            speed_mps = random.randint(settings.UE_speed_mps_MIN, settings.UE_speed_mps_MAX)
+        else:
+            target_x = pos_x
+            target_y = pos_y
+            speed_mps = 0
         from .ue import UE
 
         ue = UE(

@@ -514,7 +514,8 @@ class UE:
             }
 
     def step(self, delta_time):
-        self.move_towards_target(delta_time)
+        if settings.SIM_UE_MOBILITY_ENABLED:
+            self.move_towards_target(delta_time)
         # Enqueue trace-driven offered load (if any)
         self._replay_trace_into_buffer(delta_time)
         self.monitor_signal_strength()

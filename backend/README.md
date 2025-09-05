@@ -316,6 +316,7 @@ CLI flag quick reference (traces):
 - `--trace-slice-dir <path>`                  Auto‑attach per‑slice traces found in a directory (embb*.csv, urllc*.csv, mmtc*.csv)
 - `--trace-slice-embb/--trace-slice-urllc/--trace-slice-mmtc`  Explicit files for each slice (applies to ALL UEs of that slice)
 - `--trace-slice-ueip <IP>`                   UE IP for raw packet CSVs (used to separate DL/UL); auto‑detected if omitted
+- `--no-mobility`                             Make UEs stationary (disable movement)
 
 
 ---

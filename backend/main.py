@@ -66,6 +66,11 @@ parser.add_argument(
     action="store_true",
     help="If set, only real offered traffic (traces/AI-service) is shown; no fallback achievable rate.",
 )
+parser.add_argument(
+    "--no-mobility",
+    action="store_true",
+    help="If set, UEs are stationary (disable mobility).",
+)
 
 
 parser.add_argument(
@@ -124,6 +129,8 @@ if args.ue_mmtc is not None:
     os.environ["UE_SIMPLE_COUNT_MMTC"] = str(args.ue_mmtc)
 if args.strict_real_traffic:
     os.environ["SIM_TRAFFIC_STRICT_REAL_ONLY"] = "1"
+if args.no_mobility:
+    os.environ["SIM_UE_MOBILITY_ENABLED"] = "0"
 
 # -------------------------------------------------------------
 # Parse subscription specifications from CLI / file (deferred use)
