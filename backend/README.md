@@ -18,11 +18,15 @@ backend/
 
 - Python 3.12 or higher
 - docker (to deploy the AI services)
-- Install dependencies using:
+- Dependencies (recommended via Conda):
 
 ```bash
-pip install -r requirements.txt
+conda env create -f environment.yml
+conda activate airansim
 ```
+
+Notes:
+- Headless mode can run without optional extras; if `dash` is not installed the KPI xApp disables itself. Server mode requires `websockets` (the app prints a helpful message if missing).
 
 ## 🛠️ Usage
 
@@ -173,6 +177,45 @@ Additional notes:
 - IMSI→slice assignment (simple preset): first `mMTC` as `IMSI_0..`, then `URLLC`, then remaining as `eMBB`.
 - `--ensure-ues` registers any listed IMSIs that don’t exist yet so they immediately generate traffic.
 - The backend prints the available AI services at startup; prefer those names to avoid Docker pull failures.
+
+
+### Quick: Use CSV Traces (real offered traffic)
+
+Drive per‑UE offered load from CSV files. Two options:
+
+- Pre‑aggregated CSV (columns: `t_s,dl_bytes[,ul_bytes]`):
+
+  Headless
+  ```bash
+  python main.py --preset simple --mode headless --steps 180 \
+    --trace-map IMSI_0:backend/assets/traces/embb_youtube.csv \
+    --trace-map IMSI_1:backend/assets/traces/urllc_meet.csv \
+    --trace-speedup 1.0 --strict-real-traffic
+  ```
+
+  Server (UI + KPI dashboard)
+  ```bash
+  python main.py --preset simple --mode server \
+    --trace-map IMSI_0:backend/assets/traces/embb_youtube.csv \
+    --trace-map IMSI_1:backend/assets/traces/urllc_meet.csv \
+    --trace-speedup 1.0 --strict-real-traffic
+  ```
+
+- Raw packet CSV (columns like `Time,Source,Destination,Length`): auto‑aggregate with UE IP
+
+  ```bash
+  python main.py --preset simple --mode headless --steps 180 \
+    --trace-raw-map IMSI_0:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
+    --trace-raw-map IMSI_1:backend/assets/traces/urllc_04_10.csv:172.30.1.1 \
+    --trace-bin 1.0 --trace-speedup 1.0 --strict-real-traffic
+  ```
+
+Notes:
+- Place CSVs anywhere (e.g. `backend/assets/traces/`).
+- `--strict-real-traffic` shows only real served traffic; without it, UEs without traces display fallback achievable rate.
+- You can also provide a JSON map via `--trace-json`. See detailed section below.
+
+For full details (CSV format, JSON mapping, dashboard tips), see “📈 Replay Real App Traces (YouTube/Meet/mMTC)” below.
 
 
 

@@ -197,42 +197,29 @@ RAW_TRACE_SPECS = _parse_raw_trace_specs()
 # Load .env (won't override already-set env)
 dotenv.load_dotenv()
 
-import websockets
+"""
+Note on optional deps:
+- Server mode requires `websockets`.
+- xApps (like the KPI dashboard) require `dash` and friends as declared in environment.yml.
+We import `websockets` lazily to avoid blocking headless runs when it isn't installed.
+"""
+try:
+    import websockets as _websockets
+except Exception:
+    _websockets = None
+
 import settings
 from utils import (
-    WebSocketResponse,
-    handle_start_simulation,
-    handle_stop_simulation,
-    handle_get_simulation_state,
-    handle_get_routes,
-    handle_query_knowledge,
-    stream_agent_chat,
-    handle_network_user_action,
     setup_logging,
-    WebSocketSingleton,
 )
 from network_layer.simulation_engine import SimulationEngine
 from knowledge_layer import KnowledgeRouter
-from intelligence_layer import engineer_chat_agent
-from intelligence_layer.ai_service_pipeline import handle_ai_service_pipeline_chat
+# Server-mode imports (agents, streaming) are done lazily in websocket_handler
 
 setup_logging()
 
 
-COMMAND_HANDLERS = {
-    ("network_layer", "start_simulation"): handle_start_simulation,
-    ("network_layer", "stop_simulation"): handle_stop_simulation,
-    ("network_layer", "get_simulation_state"): handle_get_simulation_state,
-    ("knowledge_layer", "get_routes"): handle_get_routes,
-    ("knowledge_layer", "query_knowledge"): handle_query_knowledge,
-    ("intelligence_layer", "ai_service_pipeline"): handle_ai_service_pipeline_chat,
-    ("intelligence_layer", "network_engineer_chat"): partial(
-        stream_agent_chat,
-        command="network_engineer_chat_response",
-        agent_func=engineer_chat_agent,
-    ),
-    ("intelligence_layer", "network_user_action"): handle_network_user_action,
-}
+# Server-only: command handlers are constructed lazily inside websocket_handler.
 
 
 async def _bootstrap_subscriptions_if_any(simulation_engine, knowledge_router):
@@ -319,6 +306,18 @@ def _attach_traces_if_any(simulation_engine):
         except Exception as e:
             print(f"[main] Failed to load trace for {imsi} from {path}: {e}")
 async def websocket_handler(websocket):
+    # Import server-only helpers lazily to avoid unnecessary hard deps in headless mode
+    from utils.websocket_utils import (
+        WebSocketResponse,
+        handle_start_simulation,
+        handle_stop_simulation,
+        handle_get_simulation_state,
+        handle_get_routes,
+        handle_query_knowledge,
+        stream_agent_chat,
+        handle_network_user_action,
+        WebSocketSingleton,
+    )
     WebSocketSingleton().set_websocket(websocket)
     simulation_engine = SimulationEngine()
     simulation_engine.reset_network()
@@ -330,6 +329,26 @@ async def websocket_handler(websocket):
     _attach_traces_if_any(simulation_engine)
     # Bootstrap CLI-defined subscriptions (server mode)
     await _bootstrap_subscriptions_if_any(simulation_engine, knowledge_router)
+    # Build command handlers for this server instance
+    # Import server-only agent handlers lazily
+    from intelligence_layer import engineer_chat_agent
+    from intelligence_layer.ai_service_pipeline import handle_ai_service_pipeline_chat
+
+    COMMAND_HANDLERS = {
+        ("network_layer", "start_simulation"): handle_start_simulation,
+        ("network_layer", "stop_simulation"): handle_stop_simulation,
+        ("network_layer", "get_simulation_state"): handle_get_simulation_state,
+        ("knowledge_layer", "get_routes"): handle_get_routes,
+        ("knowledge_layer", "query_knowledge"): handle_query_knowledge,
+        ("intelligence_layer", "ai_service_pipeline"): handle_ai_service_pipeline_chat,
+        ("intelligence_layer", "network_engineer_chat"): partial(
+            stream_agent_chat,
+            command="network_engineer_chat_response",
+            agent_func=engineer_chat_agent,
+        ),
+        ("intelligence_layer", "network_user_action"): handle_network_user_action,
+    }
+
     while True:
         message = await websocket.recv()
         try:
@@ -389,7 +408,12 @@ async def main():
         return
 
     # Server mode (default)
-    async with websockets.serve(
+    if _websockets is None:
+        print(
+            "[main] Missing dependency: websockets. Install it to use server mode: pip install websockets"
+        )
+        return
+    async with _websockets.serve(
         websocket_handler, settings.WS_SERVER_HOST, settings.WS_SERVER_PORT
     ):
         print(
@@ -400,4 +424,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

@@ -1,7 +1,13 @@
 import os
 import random
 import copy
-import cv2
+
+try:
+    import cv2  # optional
+    _CV2_AVAILABLE = True
+except Exception:
+    cv2 = None
+    _CV2_AVAILABLE = False
 
 AI_SERVICE_UNDEPLOYMENT_COUNT_DOWN_STEPS = 20
 
@@ -13,15 +19,19 @@ for image_file_name in AI_SERVICE_SAMPLE_IMAGE_FILES:
     image_file_path = os.path.join(
         os.path.dirname(__file__), "..", "assets", image_file_name
     )
-    bgr_img = cv2.imread(image_file_path)
-    # Convert BGR to RGB before encoding
-    rgb_img = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2RGB)
-    success, buffer = cv2.imencode(".png", rgb_img)
+    if _CV2_AVAILABLE:
+        bgr_img = cv2.imread(image_file_path)
+        # Convert BGR to RGB before encoding
+        rgb_img = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2RGB)
+        success, buffer = cv2.imencode(".png", rgb_img)
+        if not success:
+            raise ValueError("Image encoding failed")
+        file_bytes = buffer.tobytes()
+    else:
+        # Fallback: read file bytes directly (PNG/JPG as-is)
+        with open(image_file_path, "rb") as f:
+            file_bytes = f.read()
 
-    if not success:
-        raise ValueError("Image encoding failed")
-
-    file_bytes = buffer.tobytes()
     AI_SERVICE_SAMPLE_REQUEST_DATA.append(
         {
             "files": {

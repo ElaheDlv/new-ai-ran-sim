@@ -3,10 +3,16 @@ from .xapp_base import xAppBase
 import threading
 from collections import defaultdict, deque
 
-# Dash / Plotly
-import dash
-from dash import Dash, dcc, html, Input, Output, State
-import plotly.graph_objs as go
+# Dash / Plotly (optional)
+try:
+    import dash
+    from dash import Dash, dcc, html, Input, Output, State
+    import plotly.graph_objs as go
+    _DASH_AVAILABLE = True
+except Exception:
+    Dash = dcc = html = Input = Output = State = None
+    go = None
+    _DASH_AVAILABLE = False
 
 from settings import (
     RAN_PRB_CAP_SLIDER_DEFAULT,
@@ -60,7 +66,8 @@ def _deque():
 class xAppLiveKPIDashboard(xAppBase):
     def __init__(self, ric=None):
         super().__init__(ric=ric)
-        self.enabled = True
+        # Disable if Dash is not available
+        self.enabled = _DASH_AVAILABLE
 
         # Rolling time axis (simulation step)
         self._t = _deque()
@@ -94,7 +101,7 @@ class xAppLiveKPIDashboard(xAppBase):
     # ---------------- xApp lifecycle ----------------
     def start(self):
         if not self.enabled:
-            print(f"{self.xapp_id}: disabled")
+            print(f"{self.xapp_id}: disabled (Dash not installed)")
             return
         self._start_dashboard()
 

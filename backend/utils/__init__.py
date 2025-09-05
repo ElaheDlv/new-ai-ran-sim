@@ -14,22 +14,28 @@ from .text_utils import (
     bytes_pretty_printer,
     parse_memory_usage_string,
 )
-from .websocket_utils import (
-    WebSocketSingleton,
-    WebSocketResponse,
-    handle_start_simulation,
-    handle_stop_simulation,
-    handle_get_simulation_state,
-    handle_get_routes,
-    handle_query_knowledge,
-    stream_agent_chat,
-    send_response_text_delta_event,
-    send_agent_updated_event,
-    send_tool_call_item_event,
-    send_tool_call_output_item_event,
-    send_message_output_item_event,
-    handle_network_user_action,
-)
+# WebSocket helpers are optional at import time (require third‑party libs).
+# Import lazily where needed (e.g., in server mode) to avoid hard deps for headless runs.
+try:
+    from .websocket_utils import (
+        WebSocketSingleton,
+        WebSocketResponse,
+        handle_start_simulation,
+        handle_stop_simulation,
+        handle_get_simulation_state,
+        handle_get_routes,
+        handle_query_knowledge,
+        stream_agent_chat,
+        send_response_text_delta_event,
+        send_agent_updated_event,
+        send_tool_call_item_event,
+        send_tool_call_output_item_event,
+        send_message_output_item_event,
+        handle_network_user_action,
+    )
+except Exception:
+    # Defer errors until server mode actually tries to use these
+    pass
 from .docker_utils import (
     get_available_port,
     start_ai_service_in_docker,

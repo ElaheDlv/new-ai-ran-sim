@@ -17,7 +17,11 @@ logger = logging.getLogger(__name__)
 
 class SimulationEngine(metaclass=utils.SingletonMeta):
     def __init__(self):
-        self.websocket = utils.WebSocketSingleton().get_websocket()
+        # WebSocket is only available in server mode; make optional for headless runs
+        try:
+            self.websocket = utils.WebSocketSingleton().get_websocket()
+        except Exception:
+            self.websocket = None
         self.core_network = None
         self.ric = None
 
