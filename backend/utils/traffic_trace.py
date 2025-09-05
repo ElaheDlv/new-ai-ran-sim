@@ -1,5 +1,7 @@
 import csv
-from typing import List, Tuple, Dict, Optional
+import os
+import logging
+from typing import List, Tuple, Dict, Optional, Any
 import math
 
 
@@ -167,3 +169,188 @@ def load_raw_packet_csv(
         ts = sorted(bins.keys())
         samples: List[Tuple[float, int, int]] = [(t, bins[t][0], bins[t][1]) for t in ts]
         return samples
+
+
+# -------------------------------------------------------------
+# Trace validation helpers
+# -------------------------------------------------------------
+
+def _first_n(reader, n: int) -> List[Any]:
+    out = []
+    for i, row in enumerate(reader):
+        if i >= n:
+            break
+        out.append(row)
+    return out
+
+
+def validate_preaggregated_trace_csv(path: str, sample_rows: int = 10) -> Dict[str, Any]:
+    """Validate that a pre-aggregated CSV exists and has required columns.
+
+    Returns a dict with keys: exists, valid, error, columns, sample_count.
+    """
+    res: Dict[str, Any] = {
+        "kind": "agg",
+        "path": path,
+        "exists": os.path.exists(path),
+        "valid": False,
+        "error": None,
+        "columns": {},
+        "sample_count": 0,
+    }
+    if not res["exists"]:
+        res["error"] = "File not found"
+        return res
+
+    try:
+        with open(path, "r", newline="") as f:
+            reader = csv.DictReader(f)
+            if reader.fieldnames is None:
+                res["error"] = "CSV has no header"
+                return res
+            fields = {name.strip(): name for name in reader.fieldnames}
+            t_keys = [k for k in ("t_s", "time", "timestamp") if k in fields]
+            dl_key = fields.get("dl_bytes")
+            ul_key = fields.get("ul_bytes")
+            if not t_keys:
+                res["error"] = "Missing time column (t_s/time/timestamp)"
+                return res
+            if dl_key is None:
+                res["error"] = "Missing 'dl_bytes' column"
+                return res
+            res["columns"] = {"time": t_keys[0], "dl_bytes": dl_key, "ul_bytes": ul_key}
+
+            rows = _first_n(reader, sample_rows)
+            ok_rows = 0
+            for row in rows:
+                try:
+                    float(row[t_keys[0]])
+                    float(row[dl_key])
+                    ok_rows += 1
+                except Exception:
+                    continue
+            res["sample_count"] = ok_rows
+            if ok_rows == 0:
+                res["error"] = "No parsable rows in first sample"
+                return res
+            res["valid"] = True
+            return res
+    except Exception as e:
+        res["error"] = str(e)
+        return res
+
+
+def validate_raw_packet_trace_csv(path: str, sample_rows: int = 100) -> Dict[str, Any]:
+    """Validate that a raw packet CSV exists and has required columns.
+
+    Returns a dict with keys: exists, valid, error, columns, detected_ue_ip, sample_count.
+    """
+    res: Dict[str, Any] = {
+        "kind": "raw",
+        "path": path,
+        "exists": os.path.exists(path),
+        "valid": False,
+        "error": None,
+        "columns": {},
+        "detected_ue_ip": None,
+        "sample_count": 0,
+    }
+    if not res["exists"]:
+        res["error"] = "File not found"
+        return res
+
+    try:
+        with open(path, "r", newline="") as f:
+            reader = csv.reader(f)
+            try:
+                header = next(reader)
+            except StopIteration:
+                res["error"] = "Empty CSV"
+                return res
+            name_map: Dict[str, int] = {h.strip().lower(): i for i, h in enumerate(header)}
+            try:
+                idx_time = _find_col(name_map, ["t_s", "time", "timestamp", "frame.time_epoch"])  # type: ignore[arg-type]
+                idx_src = _find_col(name_map, ["source", "src", "ip.src"])  # type: ignore[arg-type]
+                idx_dst = _find_col(name_map, ["destination", "dst", "ip.dst"])  # type: ignore[arg-type]
+                idx_len = _find_col(name_map, ["length", "len", "frame.len", "bytes", "size"])  # type: ignore[arg-type]
+            except KeyError as e:
+                res["error"] = str(e)
+                return res
+            res["columns"] = {
+                "time": list(name_map.keys())[idx_time] if idx_time is not None else None,
+                "src": list(name_map.keys())[idx_src] if idx_src is not None else None,
+                "dst": list(name_map.keys())[idx_dst] if idx_dst is not None else None,
+                "len": list(name_map.keys())[idx_len] if idx_len is not None else None,
+            }
+
+            rows = _first_n(reader, sample_rows)
+            ok_rows = 0
+            for row in rows:
+                if not row or len(row) <= max(idx_time, idx_src, idx_dst, idx_len):
+                    continue
+                try:
+                    float(row[idx_time])
+                    float(row[idx_len])
+                except Exception:
+                    continue
+                ok_rows += 1
+            res["sample_count"] = ok_rows
+            if ok_rows == 0:
+                res["error"] = "No parsable rows in first sample"
+                return res
+            res["detected_ue_ip"] = detect_device_ip(path)
+            res["valid"] = True
+            return res
+    except Exception as e:
+        res["error"] = str(e)
+        return res
+
+
+def validate_traces_configuration(
+    trace_map: Optional[Dict[str, str]] = None,
+    raw_map: Optional[List[Dict[str, Optional[str]]]] = None,
+    bin_s: float = 1.0,
+    overhead_bytes: int = 70,
+    logger_name: str = __name__,
+) -> Dict[str, Any]:
+    """Validate configured traces and log a concise summary.
+
+    Returns a dict with 'all_valid' flag and per-file results.
+    """
+    logger = logging.getLogger(logger_name)
+    results: Dict[str, Any] = {"all_valid": True, "agg": {}, "raw": {}}
+
+    trace_map = trace_map or {}
+    for imsi, path in trace_map.items():
+        r = validate_preaggregated_trace_csv(path)
+        results["agg"][imsi] = r
+        if not r.get("valid"):
+            results["all_valid"] = False
+            logger.error(f"Trace (agg) for {imsi}: {path} -> INVALID: {r.get('error')}")
+        else:
+            logger.info(
+                f"Trace (agg) for {imsi}: {path} -> OK (cols={r['columns']}, sample_rows={r['sample_count']})"
+            )
+
+    raw_map = raw_map or []
+    for item in raw_map:
+        if not isinstance(item, dict):
+            continue
+        imsi = item.get("imsi") or "?"
+        path = item.get("file") or ""
+        r = validate_raw_packet_trace_csv(path)
+        results["raw"][imsi] = r
+        if not r.get("valid"):
+            results["all_valid"] = False
+            logger.error(f"Trace (raw) for {imsi}: {path} -> INVALID: {r.get('error')}")
+        else:
+            ip_note = f", ue_ip_auto={r['detected_ue_ip']}" if r.get("detected_ue_ip") else ""
+            logger.info(
+                f"Trace (raw) for {imsi}: {path} -> OK (cols={r['columns']}, sample_rows={r['sample_count']}{ip_note})"
+            )
+
+    if not results["all_valid"]:
+        logger.warning("Some traces invalid. Simulation will continue but affected UEs may have no replayed traffic.")
+    else:
+        logger.info("All configured traces look valid.")
+    return results

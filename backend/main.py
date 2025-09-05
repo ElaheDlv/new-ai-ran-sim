@@ -150,6 +150,23 @@ from intelligence_layer.ai_service_pipeline import handle_ai_service_pipeline_ch
 
 setup_logging()
 
+# Validate configured traces (if any) early and log summary
+try:
+    from utils.traffic_trace import validate_traces_configuration
+    import logging as _logging
+    _tv_logger = _logging.getLogger("trace_validation")
+    validate_traces_configuration(
+        trace_map=getattr(settings, "TRACE_MAP", {}),
+        raw_map=getattr(settings, "TRACE_RAW_MAP", []),
+        bin_s=getattr(settings, "TRACE_BIN", 1.0),
+        overhead_bytes=getattr(settings, "TRACE_OVERHEAD_BYTES", 70),
+        logger_name="trace_validation",
+    )
+except Exception:
+    # Non-fatal; continue without validation if anything unexpected occurs here
+    print("[main] Warning: Exception during trace validation; continuing without validation.")
+    #pass
+
 
 COMMAND_HANDLERS = {
     ("network_layer", "start_simulation"): handle_start_simulation,
