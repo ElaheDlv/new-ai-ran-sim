@@ -37,9 +37,7 @@ from .docker_utils import (
     send_post_request,
 )
 from .traffic_trace import (
-    load_csv_trace,
     load_raw_packet_csv,
-    validate_preaggregated_trace_csv,
     validate_raw_packet_trace_csv,
     validate_traces_configuration,
 )

@@ -26,11 +26,6 @@ parser.add_argument(
 parser.add_argument("--steps", type=int, default=120, help="Headless: number of steps to run")
 # Trace replay options
 parser.add_argument(
-    "--trace-map",
-    action="append",
-    help="Attach CSV trace to a UE: IMSI:file.csv (repeatable)",
-)
-parser.add_argument(
     "--trace-speedup",
     type=float,
     default=None,
@@ -100,19 +95,6 @@ if args.freeze_mobility:
     os.environ["SIM_FREEZE_MOBILITY"] = "1"
 
 # Trace mapping and options (export via env before importing settings)
-if args.trace_map:
-    trace_map = {}
-    for item in args.trace_map:
-        # Expect format IMSI:file.csv
-        if not item or ":" not in item:
-            continue
-        imsi, path = item.split(":", 1)
-        imsi = imsi.strip()
-        path = path.strip()
-        if imsi and path:
-            trace_map[imsi] = path
-    if trace_map:
-        os.environ["TRACE_MAP_JSON"] = json.dumps(trace_map)
 if args.trace_speedup is not None:
     os.environ["TRACE_SPEEDUP"] = str(args.trace_speedup)
 if args.strict_real_traffic:
@@ -179,7 +161,6 @@ try:
     import logging as _logging
     _tv_logger = _logging.getLogger("trace_validation")
     validate_traces_configuration(
-        trace_map=getattr(settings, "TRACE_MAP", {}),
         raw_map=getattr(settings, "TRACE_RAW_MAP", []),
         bin_s=getattr(settings, "TRACE_BIN", 1.0),
         overhead_bytes=getattr(settings, "TRACE_OVERHEAD_BYTES", 0),

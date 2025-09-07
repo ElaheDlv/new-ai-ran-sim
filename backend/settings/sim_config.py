@@ -14,18 +14,7 @@ SIM_FREEZE_MOBILITY = os.getenv("SIM_FREEZE_MOBILITY", "0") == "1"
 # ---------------------------
 # Real-traffic trace replay
 # ---------------------------
-# Map of IMSI -> CSV file path (pre-aggregated traces)
-# Provided via env var TRACE_MAP_JSON as a JSON object, e.g.:
-#   {"IMSI_0": "backend/assets/traces/embb_youtube.csv"}
 import json as _json
-
-_trace_map_env = os.getenv("TRACE_MAP_JSON", "")
-try:
-    TRACE_MAP = _json.loads(_trace_map_env) if _trace_map_env else {}
-    if not isinstance(TRACE_MAP, dict):
-        TRACE_MAP = {}
-except Exception:
-    TRACE_MAP = {}
 
 # Time scaling for trace playback (1.0 = realtime)
 try:
