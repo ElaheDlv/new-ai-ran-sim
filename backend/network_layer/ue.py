@@ -288,36 +288,62 @@ class UE:
     # Trace replay helpers
     # ---------------------------
     def attach_trace(self, samples, speedup: float = 1.0):
-        """Attach a pre-aggregated CSV trace to this UE.
-        samples: list of (t_s, dl_bytes, ul_bytes)
-        speedup: time scaling (1.0 = realtime)
         """
+        Attach a traffic trace to this UE and reset replay state.
+
+        Parameters
+        - samples: iterable of (t_seconds, dl_bytes, ul_bytes)
+          Time must be relative to 0; values typically come from
+          utils.load_raw_packet_csv(...).
+        - speedup: time scaling factor. 1.0 replays at real time;
+          values >1.0 compress time (faster), <1.0 stretch time (slower).
+
+        What this does
+        - Stores a copy of the samples.
+        - Resets the internal replay cursor and clock.
+        - Clears UE DL/UL buffers that cells will serve from.
+        - Resets debug counters used to verify accounting.
+        - Logs a concise summary when TRACE_DEBUG is enabled.
+        """
+        # Store a private copy so callers can re-use their list safely
         self._trace_samples = list(samples) if samples else None
+        # Index of next sample that has not been enqueued yet
         self._trace_idx = 0
+        # Virtual replay clock in seconds (relative to first sample)
         self._trace_clock_s = 0.0
+        # Time-scaling safeguard to avoid zero/negative speeds
         self._trace_speedup = max(1e-6, float(speedup))
+        # Clear per-UE traffic buffers (offered load queues)
         self.dl_buffer_bytes = 0
         self.ul_buffer_bytes = 0
-        # Reset counters and log a brief summary when debugging
+        # Reset counters and last-step gauges used for debugging/summary
         self._trace_enqueued_dl_total = 0
         self._trace_enqueued_ul_total = 0
         self._trace_served_dl_total = 0
         self._trace_enqueued_dl_last = 0
         self._trace_enqueued_ul_last = 0
         self._trace_served_dl_last = 0
+        # Optional: emit a one-line summary when debugging is enabled
         try:
             if self._trace_samples:
                 total_dl = sum(int(s[1] or 0) for s in self._trace_samples)
                 total_ul = sum(int(s[2] or 0) for s in self._trace_samples)
-                duration = float(self._trace_samples[-1][0] - self._trace_samples[0][0]) if len(self._trace_samples) > 1 else 0.0
+                duration = (
+                    float(self._trace_samples[-1][0] - self._trace_samples[0][0])
+                    if len(self._trace_samples) > 1
+                    else 0.0
+                )
                 if getattr(settings, "TRACE_DEBUG", False) and (
                     not getattr(settings, "TRACE_DEBUG_IMSI", set())
                     or self.ue_imsi in getattr(settings, "TRACE_DEBUG_IMSI", set())
                 ):
                     logger.info(
-                        f"[trace] {self.ue_imsi}: attached {len(self._trace_samples)} samples, duration={duration:.3f}s, total_dl={total_dl}B, total_ul={total_ul}B, speedup={self._trace_speedup}x"
+                        f"[trace] {self.ue_imsi}: attached {len(self._trace_samples)} samples, "
+                        f"duration={duration:.3f}s, total_dl={total_dl}B, total_ul={total_ul}B, "
+                        f"speedup={self._trace_speedup}x"
                     )
         except Exception:
+            # Never fail attach() because of a logging/summary issue
             pass
 
     def _tick_trace(self, delta_time: float):
