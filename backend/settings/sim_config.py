@@ -70,6 +70,9 @@ try:
 except Exception:
     TRACE_OVERHEAD_BYTES = 0
 
+# Loop trace playback when enabled (replays continuously)
+TRACE_LOOP = os.getenv("TRACE_LOOP", "0") in ("1", "true", "True")
+
 # Trace debug controls
 TRACE_DEBUG = os.getenv("TRACE_DEBUG", "0") in ("1", "true", "True")
 TRACE_DEBUG_IMSI = set([

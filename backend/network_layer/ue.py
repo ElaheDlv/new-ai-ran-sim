@@ -323,6 +323,14 @@ class UE:
         self._trace_enqueued_dl_last = 0
         self._trace_enqueued_ul_last = 0
         self._trace_served_dl_last = 0
+        # Cache the period (duration) for optional looping
+        try:
+            if self._trace_samples and len(self._trace_samples) > 0:
+                self._trace_period_s = float(self._trace_samples[-1][0])
+            else:
+                self._trace_period_s = 0.0
+        except Exception:
+            self._trace_period_s = 0.0
         # Optional: emit a one-line summary when debugging is enabled
         try:
             if self._trace_samples:
@@ -381,6 +389,15 @@ class UE:
                 logger.info(
                     f"[trace] {self.ue_imsi}: t={self._trace_clock_s:.2f}s idx={self._trace_idx}/{n} enq_dl={step_dl}B enq_ul={step_ul}B buf_dl={self.dl_buffer_bytes}B"
                 )
+        # If loop mode is enabled and we have consumed all samples, wrap clock and index
+        try:
+            if getattr(settings, "TRACE_LOOP", False) and self._trace_period_s > 0 and self._trace_idx >= n:
+                # Keep any overflow beyond the period (e.g., large dt at wrap)
+                while self._trace_clock_s >= self._trace_period_s:
+                    self._trace_clock_s -= self._trace_period_s
+                self._trace_idx = 0
+        except Exception:
+            pass
 
     def move_towards_target(self, delta_time):
         if self.target_x is not None and self.target_y is not None:

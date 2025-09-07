@@ -68,6 +68,11 @@ parser.add_argument(
     type=str,
     help="Comma-separated IMSIs to debug (if omitted, all)",
 )
+parser.add_argument(
+    "--trace-loop",
+    action="store_true",
+    help="Loop trace playback (replay continuously)",
+)
 args, unknown = parser.parse_known_args()
 
 if args.preset:
@@ -130,6 +135,8 @@ if args.trace_debug:
     os.environ["TRACE_DEBUG"] = "1"
 if args.trace_debug_imsi:
     os.environ["TRACE_DEBUG_IMSI"] = args.trace_debug_imsi
+if args.trace_loop:
+    os.environ["TRACE_LOOP"] = "1"
 
 # Load .env (won't override already-set env)
 dotenv.load_dotenv()
