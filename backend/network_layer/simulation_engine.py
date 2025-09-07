@@ -4,7 +4,6 @@ import random
 
 from utils import (
     get_random_ue_operational_region,
-    load_csv_trace,
     load_raw_packet_csv,
 )
 from .core_network import CoreNetwork
@@ -179,24 +178,8 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
                 )
             return
 
-        # Fallback to pre-aggregated CSV mapping
-        trace_map = getattr(settings, "TRACE_MAP", {}) or {}
-        path = trace_map.get(ue.ue_imsi)
-        if not path:
-            return
-        if ("agg", path) not in self._trace_cache:
-            try:
-                samples = load_csv_trace(path)
-            except Exception as e:
-                logger.error(f"Failed to load trace for {ue.ue_imsi} from {path}: {e}")
-                samples = []
-            self._trace_cache[("agg", path)] = samples
-        else:
-            samples = self._trace_cache[("agg", path)]
-        if samples:
-            speed = getattr(settings, "TRACE_SPEEDUP", 1.0)
-            ue.attach_trace(samples, speed)
-            logger.info(f"Attached trace to {ue.ue_imsi} from {path} (samples={len(samples)}, speedup={speed})")
+        # Aggregated CSV mapping is disabled in this configuration; prefer RAW traces only
+        return
 
     def spawn_UEs(self):
         current_ue_count = len(self.ue_list.keys())

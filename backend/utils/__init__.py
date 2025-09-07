@@ -39,7 +39,6 @@ from .docker_utils import (
 from .traffic_trace import (
     load_csv_trace,
     load_raw_packet_csv,
-    detect_device_ip,
     validate_preaggregated_trace_csv,
     validate_raw_packet_trace_csv,
     validate_traces_configuration,

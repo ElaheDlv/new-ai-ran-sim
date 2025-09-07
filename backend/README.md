@@ -145,7 +145,7 @@ Attach a CSV trace to any spawned UE so its offered DL traffic is replayed and s
   - `--trace-map IMSI_#:path/to/file.csv` (repeatable per IMSI)
   - `--trace-speedup <x>` (scale time; default 1.0)
   - `--strict-real-traffic` (show only served traffic; no fallback capacity)
-  - `--trace-raw-map IMSI_#:path/to/raw.csv[:UE_IP]` (Wireshark/PCAP CSV; optional UE_IP to classify DL/UL)
+  - `--trace-raw-map IMSI_#:path/to/raw.csv:UE_IP` (Wireshark/PCAP CSV; UE_IP required to classify DL/UL)
   - `--trace-bin <seconds>` (aggregation bin for raw CSV; default 1.0)
   - `--trace-overhead-bytes <n>` (subtract per-packet bytes in raw CSV; default 0)
 

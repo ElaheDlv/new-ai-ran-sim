@@ -7,67 +7,74 @@ import math
 
 def load_csv_trace(path: str) -> List[Tuple[float, int, int]]:
     """
-    Load a traffic trace CSV into a list of (t_seconds, dl_bytes, ul_bytes).
-
-    Expected headers (case-sensitive any of):
-      - time columns: one of ["t_s", "time", "timestamp"]
-      - data columns: "dl_bytes" and optionally "ul_bytes"
-
-    If ul_bytes is missing, it defaults to 0.
-    Timestamps are normalized to start at 0.0.
+    Disabled: aggregated CSV traces are not supported in this deployment.
+    Use load_raw_packet_csv and the --trace-raw-map CLI instead.
     """
-    # Accumulator for parsed samples as tuples (t_s, dl_bytes, ul_bytes)
-    samples: List[Tuple[float, int, int]] = []
-    # Open the CSV file for reading
-    with open(path, "r", newline="") as f:
-        # DictReader yields rows as dicts keyed by header names
-        reader = csv.DictReader(f)
-        # If no header is present, DictReader.fieldnames is None
-        if reader.fieldnames is None:
-            raise ValueError("CSV has no header")
-        # Normalize header names to a lookup map (preserving original case as values)
-        fields = {name.strip(): name for name in reader.fieldnames}
-        # Try to find a time column using supported names (case sensitive first)
-        t_keys = [k for k in ("t_s", "time", "timestamp") if k in fields]
-        if not t_keys:
-            # Fall back to case-insensitive search by lowering all header names
-            lowered = {k.lower(): k for k in fields}
-            t_keys = [lowered.get(k) for k in ("t_s", "time", "timestamp") if lowered.get(k)]
-        if not t_keys:
-            # Give a clear error if no time column was found
-            raise KeyError("Trace CSV must contain a time column: t_s, time, or timestamp")
-        # Use the first matching time column
-        t_key = t_keys[0]
-        # Data columns: dl_bytes is required; ul_bytes is optional
-        dl_key = fields.get("dl_bytes")
-        ul_key = fields.get("ul_bytes")
-        if dl_key is None:
-            raise KeyError("Trace CSV must contain 'dl_bytes' column")
-        # Parse each row, skipping lines that are empty or unparsable
-        for row in reader:
-            if not row:
-                continue  # skip empty rows
-            try:
-                t = float(row[t_key])  # parse timestamp
-            except Exception:
-                continue  # skip if timestamp is not numeric
-            try:
-                dl = int(float(row[dl_key]))  # dl_bytes as int
-            except Exception:
-                dl = 0  # default to 0 if missing or non-numeric
-            ul = 0
-            if ul_key is not None:
-                try:
-                    ul = int(float(row[ul_key]))  # ul_bytes if present
-                except Exception:
-                    ul = 0
-            samples.append((t, dl, ul))
-    if not samples:
-        return []
-    # Normalize timestamps so the first sample starts at 0s
-    t0 = samples[0][0]
-    norm = [(s[0] - t0, s[1], s[2]) for s in samples]
-    return norm
+    raise NotImplementedError(
+        "load_csv_trace is disabled. Use load_raw_packet_csv / --trace-raw-map."
+    )
+    # """
+    # Load a traffic trace CSV into a list of (t_seconds, dl_bytes, ul_bytes).
+
+    # Expected headers (case-sensitive any of):
+    #   - time columns: one of ["t_s", "time", "timestamp"]
+    #   - data columns: "dl_bytes" and optionally "ul_bytes"
+
+    # If ul_bytes is missing, it defaults to 0.
+    # Timestamps are normalized to start at 0.0.
+    # """
+    # # Accumulator for parsed samples as tuples (t_s, dl_bytes, ul_bytes)
+    # samples: List[Tuple[float, int, int]] = []
+    # # Open the CSV file for reading
+    # with open(path, "r", newline="") as f:
+    #     # DictReader yields rows as dicts keyed by header names
+    #     reader = csv.DictReader(f)
+    #     # If no header is present, DictReader.fieldnames is None
+    #     if reader.fieldnames is None:
+    #         raise ValueError("CSV has no header")
+    #     # Normalize header names to a lookup map (preserving original case as values)
+    #     fields = {name.strip(): name for name in reader.fieldnames}
+    #     # Try to find a time column using supported names (case sensitive first)
+    #     t_keys = [k for k in ("t_s", "time", "timestamp") if k in fields]
+    #     if not t_keys:
+    #         # Fall back to case-insensitive search by lowering all header names
+    #         lowered = {k.lower(): k for k in fields}
+    #         t_keys = [lowered.get(k) for k in ("t_s", "time", "timestamp") if lowered.get(k)]
+    #     if not t_keys:
+    #         # Give a clear error if no time column was found
+    #         raise KeyError("Trace CSV must contain a time column: t_s, time, or timestamp")
+    #     # Use the first matching time column
+    #     t_key = t_keys[0]
+    #     # Data columns: dl_bytes is required; ul_bytes is optional
+    #     dl_key = fields.get("dl_bytes")
+    #     ul_key = fields.get("ul_bytes")
+    #     if dl_key is None:
+    #         raise KeyError("Trace CSV must contain 'dl_bytes' column")
+    #     # Parse each row, skipping lines that are empty or unparsable
+    #     for row in reader:
+    #         if not row:
+    #             continue  # skip empty rows
+    #         try:
+    #             t = float(row[t_key])  # parse timestamp
+    #         except Exception:
+    #             continue  # skip if timestamp is not numeric
+    #         try:
+    #             dl = int(float(row[dl_key]))  # dl_bytes as int
+    #         except Exception:
+    #             dl = 0  # default to 0 if missing or non-numeric
+    #         ul = 0
+    #         if ul_key is not None:
+    #             try:
+    #                 ul = int(float(row[ul_key]))  # ul_bytes if present
+    #             except Exception:
+    #                 ul = 0
+    #         samples.append((t, dl, ul))
+    # if not samples:
+    #     return []
+    # # Normalize timestamps so the first sample starts at 0s
+    # t0 = samples[0][0]
+    # norm = [(s[0] - t0, s[1], s[2]) for s in samples]
+    # return norm
 
 
 def _find_col(name_map: Dict[str, int], candidates: List[str]) -> int:
@@ -93,42 +100,8 @@ def _find_col(name_map: Dict[str, int], candidates: List[str]) -> int:
     raise KeyError(f"Columns {candidates} not found; got: {list(name_map.keys())}")
 
 
-def detect_device_ip(path: str) -> Optional[str]:
-    """
-    Heuristically detect the UE/device IP address by counting appearances
-    in Source and Destination columns and choosing the most frequent IP.
-    Useful when `ue_ip` is not provided explicitly.
-    """
-    try:
-        with open(path, "r", newline="") as f:
-            reader = csv.reader(f)
-            # Read header and build a lowercase name->index map
-            header = next(reader)
-            name_map: Dict[str, int] = {h.strip().lower(): i for i, h in enumerate(header)}
-            # Locate source and destination IP columns
-            idx_src = _find_col(name_map, ["source", "src", "ip.src"])  # type: ignore[arg-type]
-            idx_dst = _find_col(name_map, ["destination", "dst", "ip.dst"])  # type: ignore[arg-type]
-            counts: Dict[str, int] = {}
-            # Walk rows and count each IP seen in src/dst
-            for row in reader:
-                if not row:
-                    continue
-                if len(row) > idx_src:
-                    ip = row[idx_src].strip()
-                    if ip:
-                        counts[ip] = counts.get(ip, 0) + 1
-                if len(row) > idx_dst:
-                    ip = row[idx_dst].strip()
-                    if ip:
-                        counts[ip] = counts.get(ip, 0) + 1
-            # If nothing was counted, return None (auto-detect failed)
-            if not counts:
-                return None
-            # Return the IP with the highest count
-            return max(counts.items(), key=lambda kv: kv[1])[0]
-    except Exception:
-        # On any parsing error, just return None and let caller handle it
-        return None
+# Note: IP auto-detection removed by design. The raw loader now requires an
+# explicit `ue_ip` and will raise an error if it is missing.
 
 
 def load_raw_packet_csv(
@@ -158,6 +131,9 @@ def load_raw_packet_csv(
         (bin_time_s, dl_bytes, ul_bytes) sorted by time.
     """
     # Read header row to build a name->index map (case-insensitive)
+    if not ue_ip:
+        raise ValueError("ue_ip is required to classify DL/UL; pass ue_ip explicitly.")
+
     with open(path, "r", newline="") as f:
         reader = csv.reader(f)
         try:
@@ -176,9 +152,6 @@ def load_raw_packet_csv(
         # Aggregate packet lengths into (DL, UL) buckets keyed by bin timestamp
         bins: Dict[float, Tuple[int, int]] = {}
         first_t = None
-        # If UE IP is not provided, try to auto-detect it from endpoint counts
-        if ue_ip is None:
-            ue_ip = detect_device_ip(path)
         for row in reader:
             if not row or len(row) <= max(idx_time, idx_src, idx_dst, idx_len):
                 continue
@@ -290,7 +263,7 @@ def validate_raw_packet_trace_csv(path: str, sample_rows: int = 100) -> Dict[str
     that a small sample of rows is numeric. Also reports an auto-detected
     UE IP (if any) for reference.
 
-    Returns a dict with keys: exists, valid, error, columns, detected_ue_ip, sample_count.
+    Returns a dict with keys: exists, valid, error, columns, sample_count.
     """
     res: Dict[str, Any] = {
         "kind": "raw",
@@ -299,7 +272,6 @@ def validate_raw_packet_trace_csv(path: str, sample_rows: int = 100) -> Dict[str
         "valid": False,
         "error": None,
         "columns": {},
-        "detected_ue_ip": None,
         "sample_count": 0,
     }
     if not res["exists"]:
@@ -345,7 +317,6 @@ def validate_raw_packet_trace_csv(path: str, sample_rows: int = 100) -> Dict[str
             if ok_rows == 0:
                 res["error"] = "No parsable rows in first sample"
                 return res
-            res["detected_ue_ip"] = detect_device_ip(path)
             res["valid"] = True
             return res
     except Exception as e:
@@ -398,16 +369,15 @@ def validate_traces_configuration(
             continue
         imsi = item.get("imsi") or "?"
         path = item.get("file") or ""
-        # Validate the packet CSV exists and is parsable; also detect UE IP heuristically
+        # Validate the packet CSV exists and is parsable
         r = validate_raw_packet_trace_csv(path)
         results["raw"][imsi] = r
         if not r.get("valid"):
             results["all_valid"] = False
             logger.error(f"{C_RED}Trace (raw) for {imsi}: {path} -> INVALID: {r.get('error')}{C_RESET}")
         else:
-            ip_note = f", ue_ip_auto={r['detected_ue_ip']}" if r.get("detected_ue_ip") else ""
             logger.info(f"{C_GREEN}Trace (raw) for {imsi}: {path} -> OK{C_RESET} "
-                        f"(cols={r['columns']}, sample_rows={r['sample_count']}{ip_note})")
+                        f"(cols={r['columns']}, sample_rows={r['sample_count']})")
 
     # Final summary line to make failures obvious but non-fatal
     if not results["all_valid"]:

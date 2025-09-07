@@ -39,7 +39,7 @@ parser.add_argument(
 parser.add_argument(
     "--trace-raw-map",
     action="append",
-    help="Attach raw packet CSV to a UE: IMSI:file.csv[:UE_IP] (repeatable)",
+    help="Attach raw packet CSV to a UE: IMSI:file.csv:UE_IP (repeatable; UE_IP required)",
 )
 parser.add_argument(
     "--trace-bin",
@@ -120,20 +120,24 @@ if args.strict_real_traffic:
 if args.trace_raw_map:
     raw_items = []
     for item in args.trace_raw_map:
-        # Format: IMSI:file.csv[:UE_IP]
+        # Format: IMSI:file.csv:UE_IP (UE_IP required)
         if not item or ":" not in item:
             continue
         parts = item.split(":")
         if len(parts) < 2:
             continue
         imsi, path = parts[0].strip(), ":".join(parts[1:]).strip()
+        # Require ue_ip (last token). If >3 parts, assume middle colons belong to path
         ue_ip = None
-        # If there are exactly 3 parts, last is ue_ip; if >3, assume last is ue_ip and the middle joined were part of path
         if len(parts) >= 3:
             ue_ip = parts[-1].strip()
             path = ":".join(parts[1:-1]).strip()
+        # If ue_ip missing, skip with warning
         if imsi and path:
-            raw_items.append({"imsi": imsi, "file": path, "ue_ip": ue_ip})
+            if ue_ip:
+                raw_items.append({"imsi": imsi, "file": path, "ue_ip": ue_ip})
+            else:
+                print(f"[main] Skipping --trace-raw-map '{item}': missing UE_IP")
     if raw_items:
         os.environ["TRACE_RAW_MAP_JSON"] = json.dumps(raw_items)
 if args.trace_bin is not None:
