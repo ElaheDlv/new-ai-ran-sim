@@ -109,7 +109,7 @@ def load_raw_packet_csv(
     path: str,
     ue_ip: Optional[str] = None,
     bin_s: float = 1.0,
-    overhead_sub_bytes: int = 70,
+    overhead_sub_bytes: int = 0,
 ) -> List[Tuple[float, int, int]]:
     """
     Parse a raw packet capture exported as CSV and aggregate it into

@@ -156,7 +156,7 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
             path = raw_entry.get("file")
             ue_ip = raw_entry.get("ue_ip")
             bin_s = getattr(settings, "TRACE_BIN", 1.0)
-            overhead = getattr(settings, "TRACE_OVERHEAD_BYTES", 70)
+            overhead = getattr(settings, "TRACE_OVERHEAD_BYTES", 0)
             if not path:
                 return
             cache_key = ("raw", path, ue_ip or "AUTO", float(bin_s))

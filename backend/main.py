@@ -51,7 +51,7 @@ parser.add_argument(
     "--trace-overhead-bytes",
     type=int,
     default=None,
-    help="Subtract this many bytes per packet in raw CSV (default 70)",
+    help="Subtract this many bytes per packet in raw CSV (default 0)",
 )
 parser.add_argument(
     "--strict-real-traffic",
@@ -178,7 +178,7 @@ try:
         trace_map=getattr(settings, "TRACE_MAP", {}),
         raw_map=getattr(settings, "TRACE_RAW_MAP", []),
         bin_s=getattr(settings, "TRACE_BIN", 1.0),
-        overhead_bytes=getattr(settings, "TRACE_OVERHEAD_BYTES", 70),
+        overhead_bytes=getattr(settings, "TRACE_OVERHEAD_BYTES", 0),
         logger_name="trace_validation",
     )
 except Exception:

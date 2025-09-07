@@ -74,10 +74,12 @@ except Exception:
     TRACE_BIN = 1.0
 
 # Subtract per-packet overhead when aggregating raw traces (e.g., headers/trailer)
+# Default is 0 since the simulator does not re-encapsulate packets; adjust only if
+# you want to approximate payload bytes (e.g., 42 for IPv4+UDP, 54 for IPv4+TCP).
 try:
-    TRACE_OVERHEAD_BYTES = int(os.getenv("TRACE_OVERHEAD_BYTES", "70"))
+    TRACE_OVERHEAD_BYTES = int(os.getenv("TRACE_OVERHEAD_BYTES", "0"))
 except Exception:
-    TRACE_OVERHEAD_BYTES = 70
+    TRACE_OVERHEAD_BYTES = 0
 
 # Trace debug controls
 TRACE_DEBUG = os.getenv("TRACE_DEBUG", "0") in ("1", "true", "True")

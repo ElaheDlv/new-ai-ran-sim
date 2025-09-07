@@ -147,7 +147,7 @@ Attach a CSV trace to any spawned UE so its offered DL traffic is replayed and s
   - `--strict-real-traffic` (show only served traffic; no fallback capacity)
   - `--trace-raw-map IMSI_#:path/to/raw.csv[:UE_IP]` (Wireshark/PCAP CSV; optional UE_IP to classify DL/UL)
   - `--trace-bin <seconds>` (aggregation bin for raw CSV; default 1.0)
-  - `--trace-overhead-bytes <n>` (subtract per-packet bytes in raw CSV; default 70)
+  - `--trace-overhead-bytes <n>` (subtract per-packet bytes in raw CSV; default 0)
 
 Examples:
 
@@ -166,7 +166,7 @@ python main.py --preset simple --mode server \
 python main.py --preset simple --mode headless --steps 180 \
   --trace-raw-map IMSI_2:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
   --trace-raw-map IMSI_1:backend/assets/traces/urllc_04_10.csv:172.30.1.1 \
-  --trace-bin 1.0 --trace-overhead-bytes 70 --trace-speedup 1.0 --strict-real-traffic
+  --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic
 ```
 
 How it works:
