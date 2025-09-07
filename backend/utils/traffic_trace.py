@@ -16,77 +16,100 @@ def load_csv_trace(path: str) -> List[Tuple[float, int, int]]:
     If ul_bytes is missing, it defaults to 0.
     Timestamps are normalized to start at 0.0.
     """
+    # Accumulator for parsed samples as tuples (t_s, dl_bytes, ul_bytes)
     samples: List[Tuple[float, int, int]] = []
+    # Open the CSV file for reading
     with open(path, "r", newline="") as f:
+        # DictReader yields rows as dicts keyed by header names
         reader = csv.DictReader(f)
+        # If no header is present, DictReader.fieldnames is None
         if reader.fieldnames is None:
             raise ValueError("CSV has no header")
+        # Normalize header names to a lookup map (preserving original case as values)
         fields = {name.strip(): name for name in reader.fieldnames}
-        # map possible time headers
+        # Try to find a time column using supported names (case sensitive first)
         t_keys = [k for k in ("t_s", "time", "timestamp") if k in fields]
         if not t_keys:
-            # try lowercase
+            # Fall back to case-insensitive search by lowering all header names
             lowered = {k.lower(): k for k in fields}
             t_keys = [lowered.get(k) for k in ("t_s", "time", "timestamp") if lowered.get(k)]
         if not t_keys:
+            # Give a clear error if no time column was found
             raise KeyError("Trace CSV must contain a time column: t_s, time, or timestamp")
+        # Use the first matching time column
         t_key = t_keys[0]
+        # Data columns: dl_bytes is required; ul_bytes is optional
         dl_key = fields.get("dl_bytes")
         ul_key = fields.get("ul_bytes")
         if dl_key is None:
             raise KeyError("Trace CSV must contain 'dl_bytes' column")
+        # Parse each row, skipping lines that are empty or unparsable
         for row in reader:
             if not row:
-                continue
+                continue  # skip empty rows
             try:
-                t = float(row[t_key])
+                t = float(row[t_key])  # parse timestamp
             except Exception:
-                continue
+                continue  # skip if timestamp is not numeric
             try:
-                dl = int(float(row[dl_key]))
+                dl = int(float(row[dl_key]))  # dl_bytes as int
             except Exception:
-                dl = 0
+                dl = 0  # default to 0 if missing or non-numeric
             ul = 0
             if ul_key is not None:
                 try:
-                    ul = int(float(row[ul_key]))
+                    ul = int(float(row[ul_key]))  # ul_bytes if present
                 except Exception:
                     ul = 0
             samples.append((t, dl, ul))
     if not samples:
         return []
-    # normalize to start at 0
+    # Normalize timestamps so the first sample starts at 0s
     t0 = samples[0][0]
     norm = [(s[0] - t0, s[1], s[2]) for s in samples]
     return norm
 
 
 def _find_col(name_map: Dict[str, int], candidates: List[str]) -> int:
-    """Find a column index by trying exact, then startswith, then contains matches."""
+    """
+    Locate a column index in a case-insensitive header map using a
+    tolerant matching strategy: exact match first, then prefix, then substring.
+    """
+    # 1) Exact match: prefer exact header names if available
     for n in candidates:
         if n in name_map:
             return name_map[n]
+    # 2) Prefix match: accept headers that start with the candidate
     for n in candidates:
         for k, idx in name_map.items():
             if k.startswith(n):
                 return idx
+    # 3) Substring match: as a last resort, accept any header containing the candidate
     for n in candidates:
         for k, idx in name_map.items():
             if n in k:
                 return idx
+    # If nothing matched, raise with a helpful message listing the available headers
     raise KeyError(f"Columns {candidates} not found; got: {list(name_map.keys())}")
 
 
 def detect_device_ip(path: str) -> Optional[str]:
-    """Heuristically detect the UE/device IP from Source/Destination counts."""
+    """
+    Heuristically detect the UE/device IP address by counting appearances
+    in Source and Destination columns and choosing the most frequent IP.
+    Useful when `ue_ip` is not provided explicitly.
+    """
     try:
         with open(path, "r", newline="") as f:
             reader = csv.reader(f)
+            # Read header and build a lowercase name->index map
             header = next(reader)
             name_map: Dict[str, int] = {h.strip().lower(): i for i, h in enumerate(header)}
+            # Locate source and destination IP columns
             idx_src = _find_col(name_map, ["source", "src", "ip.src"])  # type: ignore[arg-type]
             idx_dst = _find_col(name_map, ["destination", "dst", "ip.dst"])  # type: ignore[arg-type]
             counts: Dict[str, int] = {}
+            # Walk rows and count each IP seen in src/dst
             for row in reader:
                 if not row:
                     continue
@@ -98,10 +121,13 @@ def detect_device_ip(path: str) -> Optional[str]:
                     ip = row[idx_dst].strip()
                     if ip:
                         counts[ip] = counts.get(ip, 0) + 1
+            # If nothing was counted, return None (auto-detect failed)
             if not counts:
                 return None
+            # Return the IP with the highest count
             return max(counts.items(), key=lambda kv: kv[1])[0]
     except Exception:
+        # On any parsing error, just return None and let caller handle it
         return None
 
 
@@ -191,16 +217,19 @@ def load_raw_packet_csv(
 # -------------------------------------------------------------
 
 def _first_n(reader, n: int) -> List[Any]:
+    """Consume and return the first n rows from an iterator (e.g., CSV reader)."""
     out = []
     for i, row in enumerate(reader):
         if i >= n:
-            break
+            break  # stop after collecting n rows
         out.append(row)
     return out
 
 
 def validate_preaggregated_trace_csv(path: str, sample_rows: int = 10) -> Dict[str, Any]:
-    """Validate that a pre-aggregated CSV exists and has required columns.
+    """
+    Validate that a pre-aggregated CSV exists, has required columns, and
+    that a small sample of rows is parsable as numbers.
 
     Returns a dict with keys: exists, valid, error, columns, sample_count.
     """
@@ -256,7 +285,10 @@ def validate_preaggregated_trace_csv(path: str, sample_rows: int = 10) -> Dict[s
 
 
 def validate_raw_packet_trace_csv(path: str, sample_rows: int = 100) -> Dict[str, Any]:
-    """Validate that a raw packet CSV exists and has required columns.
+    """
+    Validate that a raw packet CSV exists, contains required columns, and
+    that a small sample of rows is numeric. Also reports an auto-detected
+    UE IP (if any) for reference.
 
     Returns a dict with keys: exists, valid, error, columns, detected_ue_ip, sample_count.
     """
@@ -328,9 +360,11 @@ def validate_traces_configuration(
     overhead_bytes: int = 70,
     logger_name: str = __name__,
 ) -> Dict[str, Any]:
-    """Validate configured traces and log a concise summary.
+    """
+    Validate both pre-aggregated and raw trace configurations and log a
+    one-line status per entry so misconfigurations are visible early.
 
-    Returns a dict with 'all_valid' flag and per-file results.
+    Returns a dict with 'all_valid' and per-kind results.
     """
     logger = logging.getLogger(logger_name)
     results: Dict[str, Any] = {"all_valid": True, "agg": {}, "raw": {}}
@@ -343,10 +377,12 @@ def validate_traces_configuration(
     C_YELLOW = "\033[93m"
     C_BOLD = "\033[1m"
 
+    # Visible banner to make validation easy to spot in logs
     logger.info(f"{C_CYAN}{C_BOLD}=== TRACE VALIDATION START ==={C_RESET}")
 
     trace_map = trace_map or {}
     for imsi, path in trace_map.items():
+        # Check each (IMSI -> aggregated csv) mapping
         r = validate_preaggregated_trace_csv(path)
         results["agg"][imsi] = r
         if not r.get("valid"):
@@ -362,6 +398,7 @@ def validate_traces_configuration(
             continue
         imsi = item.get("imsi") or "?"
         path = item.get("file") or ""
+        # Validate the packet CSV exists and is parsable; also detect UE IP heuristically
         r = validate_raw_packet_trace_csv(path)
         results["raw"][imsi] = r
         if not r.get("valid"):
@@ -372,6 +409,7 @@ def validate_traces_configuration(
             logger.info(f"{C_GREEN}Trace (raw) for {imsi}: {path} -> OK{C_RESET} "
                         f"(cols={r['columns']}, sample_rows={r['sample_count']}{ip_note})")
 
+    # Final summary line to make failures obvious but non-fatal
     if not results["all_valid"]:
         logger.warning(f"{C_YELLOW}Some traces invalid. Simulation will continue but affected UEs may have no replayed traffic.{C_RESET}")
     else:
