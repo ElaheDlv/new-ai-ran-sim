@@ -112,30 +112,45 @@ def load_raw_packet_csv(
     overhead_sub_bytes: int = 70,
 ) -> List[Tuple[float, int, int]]:
     """
-    Load a packet-level CSV (columns: Time, Source, Destination, Length) and
-    aggregate into (t_seconds, dl_bytes, ul_bytes) with bin size `bin_s`.
+    Parse a raw packet capture exported as CSV and aggregate it into
+    evenly binned traffic samples suitable for replay.
 
-    - `ue_ip` is used to classify direction: DL if Destination==ue_ip; UL if Source==ue_ip
-    - Time may be float seconds or any numeric; we floor(Time/bin_s)*bin_s per sample,
-      then produce uniform bins starting from the first bin to the last observed.
+    Input CSV is expected to have time and IP endpoints (case-insensitive
+    column names are supported). Common headers include:
+      - Time: one of [t_s, time, timestamp, frame.time_epoch]
+      - Source/Destination: [source/src/ip.src] and [destination/dst/ip.dst]
+      - Length: one of [length, len, frame.len, bytes, size]
+
+    Aggregation rules:
+      - Each packet contributes (length - overhead_sub_bytes) bytes.
+      - Direction is classified by `ue_ip`:
+          DL if Destination == ue_ip; UL if Source == ue_ip.
+        If `ue_ip` is None, it is detected heuristically from endpoint counts.
+      - Time is normalized to start at 0 using the first observed timestamp.
+      - Packets are grouped into bins of width `bin_s` seconds using
+        floor((t - t0)/bin_s) * bin_s; the output is a list of
+        (bin_time_s, dl_bytes, ul_bytes) sorted by time.
     """
-    # Read header row to find columns (case-insensitive)
+    # Read header row to build a name->index map (case-insensitive)
     with open(path, "r", newline="") as f:
         reader = csv.reader(f)
         try:
             header = next(reader)
         except StopIteration:
             return []
+        # Lowercase keys for case-insensitive lookups
         name_map: Dict[str, int] = {h.strip().lower(): i for i, h in enumerate(header)}
 
+        # Locate required columns with tolerant matching
         idx_time = _find_col(name_map, ["t_s", "time", "timestamp", "frame.time_epoch"]) if name_map else 0
         idx_src = _find_col(name_map, ["source", "src", "ip.src"])  # type: ignore[arg-type]
         idx_dst = _find_col(name_map, ["destination", "dst", "ip.dst"])  # type: ignore[arg-type]
         idx_len = _find_col(name_map, ["length", "len", "frame.len", "bytes", "size"])  # type: ignore[arg-type]
 
-        # Aggregate by bins
+        # Aggregate packet lengths into (DL, UL) buckets keyed by bin timestamp
         bins: Dict[float, Tuple[int, int]] = {}
         first_t = None
+        # If UE IP is not provided, try to auto-detect it from endpoint counts
         if ue_ip is None:
             ue_ip = detect_device_ip(path)
         for row in reader:
@@ -150,12 +165,12 @@ def load_raw_packet_csv(
             dst = row[idx_dst].strip()
             if first_t is None:
                 first_t = t
-            # Normalize time to start at zero
+            # Normalize time to start at zero (relative to first packet)
             t0 = t - (first_t or 0.0)
-            # Bin index
+            # Compute bin start time with numeric stability guards
             b = math.floor(t0 / max(1e-6, float(bin_s))) * float(bin_s)
             dl, ul = bins.get(b, (0, 0))
-            # Adjust length to emulate UDP payload (subtract headers/trailer)
+            # Subtract protocol overhead to approximate payload bytes
             adj = max(0, int(length) - max(0, int(overhead_sub_bytes)))
             if ue_ip and dst == ue_ip:
                 dl += adj
@@ -165,7 +180,7 @@ def load_raw_packet_csv(
 
         if not bins:
             return []
-        # Produce ordered list of (t, dl, ul)
+        # Produce ordered list of (t, dl, ul) sorted by bin time
         ts = sorted(bins.keys())
         samples: List[Tuple[float, int, int]] = [(t, bins[t][0], bins[t][1]) for t in ts]
         return samples
