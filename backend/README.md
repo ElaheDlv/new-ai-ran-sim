@@ -152,13 +152,13 @@ Examples:
 
 ```bash
 # Using raw packet CSVs (Wireshark export)
-python main.py --preset simple --mode headless --steps 180 \
+python backend/main.py --preset simple --mode headless --steps 180 \
   --trace-raw-map IMSI_2:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
   --trace-raw-map IMSI_1:backend/assets/traces/urllc_04_10.csv:172.30.1.1 \
   --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic
 
 # Three stationary UEs (raw traces only), headless (one per slice)
-python main.py --preset simple --mode headless --steps 180 \
+python backend/main.py --preset simple --mode headless --steps 180 \
   --freeze-mobility \
   --ue-embb 1 --ue-urllc 1 --ue-mmtc 1 \
   --trace-raw-map IMSI_0:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
@@ -191,7 +191,7 @@ python backend/main.py --preset simple --mode headless --steps 180 \
   --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic
 
 # Three stationary UEs (raw traces only), server mode (one per slice)
-python main.py --preset simple --mode server \
+python backend/main.py --preset simple --mode server \
   --freeze-mobility \
   --ue-embb 1 --ue-urllc 1 --ue-mmtc 1 \
   --trace-raw-map IMSI_0:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
