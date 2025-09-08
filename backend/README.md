@@ -151,8 +151,14 @@ Attach a raw packet CSV to any spawned UE so its offered DL traffic is replayed 
 Examples:
 
 ```bash
-# Using raw packet CSVs (Wireshark export)
+# Using raw packet CSVs (Wireshark export) — headless
 python backend/main.py --preset simple --mode headless --steps 180 \
+  --trace-raw-map IMSI_2:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
+  --trace-raw-map IMSI_1:backend/assets/traces/urllc_04_10.csv:172.30.1.1 \
+  --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic
+
+# Using raw packet CSVs (Wireshark export) — server
+python backend/main.py --preset simple --mode server \
   --trace-raw-map IMSI_2:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
   --trace-raw-map IMSI_1:backend/assets/traces/urllc_04_10.csv:172.30.1.1 \
   --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic
@@ -174,6 +180,14 @@ python backend/main.py --preset simple --mode headless --steps 180 \
   --trace-raw-map IMSI_2:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
   --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic
 
+# Three stationary UEs, eMBB-only — server
+python backend/main.py --preset simple --mode server \
+  --freeze-mobility --ue-embb 3 --ue-urllc 0 --ue-mmtc 0 \
+  --trace-raw-map IMSI_0:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
+  --trace-raw-map IMSI_1:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
+  --trace-raw-map IMSI_2:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
+  --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic
+
 # Three stationary UEs, URLLC-only (all use URLLC trace)
 python backend/main.py --preset simple --mode headless --steps 180 \
   --freeze-mobility --ue-embb 0 --ue-urllc 3 --ue-mmtc 0 \
@@ -182,8 +196,24 @@ python backend/main.py --preset simple --mode headless --steps 180 \
   --trace-raw-map IMSI_2:backend/assets/traces/urllc_04_10.csv:172.30.1.1 \
   --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic
 
+# Three stationary UEs, URLLC-only — server
+python backend/main.py --preset simple --mode server \
+  --freeze-mobility --ue-embb 0 --ue-urllc 3 --ue-mmtc 0 \
+  --trace-raw-map IMSI_0:backend/assets/traces/urllc_04_10.csv:172.30.1.1 \
+  --trace-raw-map IMSI_1:backend/assets/traces/urllc_04_10.csv:172.30.1.1 \
+  --trace-raw-map IMSI_2:backend/assets/traces/urllc_04_10.csv:172.30.1.1 \
+  --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic
+
 # Three stationary UEs, mMTC-only (all use mMTC trace)
 python backend/main.py --preset simple --mode headless --steps 180 \
+  --freeze-mobility --ue-embb 0 --ue-urllc 0 --ue-mmtc 3 \
+  --trace-raw-map IMSI_0:backend/assets/traces/mmtc_04_10.csv:172.30.1.1 \
+  --trace-raw-map IMSI_1:backend/assets/traces/mmtc_04_10.csv:172.30.1.1 \
+  --trace-raw-map IMSI_2:backend/assets/traces/mmtc_04_10.csv:172.30.1.1 \
+  --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic
+
+# Three stationary UEs, mMTC-only — server
+python backend/main.py --preset simple --mode server \
   --freeze-mobility --ue-embb 0 --ue-urllc 0 --ue-mmtc 3 \
   --trace-raw-map IMSI_0:backend/assets/traces/mmtc_04_10.csv:172.30.1.1 \
   --trace-raw-map IMSI_1:backend/assets/traces/mmtc_04_10.csv:172.30.1.1 \
@@ -208,6 +238,7 @@ How it works:
 Notes:
 - Traces are attached by IMSI on spawn/registration. Ensure those IMSIs exist during the run (use `--ue-max`/slice counts with simple preset).
 - Place CSVs anywhere; `backend/assets/traces/` is a convenient location.
+- Headless mode runs for exactly `--steps` iterations and then exits. Use server mode for an open‑ended run controlled from the frontend (http://localhost:3000) or a WebSocket client.
 
 ---
 
