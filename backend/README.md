@@ -148,6 +148,12 @@ Attach a raw packet CSV to any spawned UE so its offered DL traffic is replayed 
   - `--trace-overhead-bytes <n>` (subtract per-packet bytes in raw CSV; default 0)
   - `--trace-loop` (replay traces continuously)
 
+Key trace flags (what they do):
+
+- `--trace-speedup <x>`: scales the replay clock. 1.0 = real time. 2.0 replays twice as fast (the same traced seconds happen in half the wall-clock time); 0.5 replays at half speed. Affects when samples are enqueued into UE buffers; serving still happens per simulation step.
+- `--trace-bin <seconds>`: aggregation window for raw packet CSVs. Packets are grouped by `floor((t - t0)/bin)*bin` and summed to produce `(t, dl_bytes, ul_bytes)` samples. Smaller bins (e.g., 0.2) preserve burstiness; larger bins (e.g., 2.0) smooth traffic. Default 1.0 aligns with the simulator’s 1 s step.
+- `--trace-loop`: when enabled, traces repeat seamlessly after the last sample. Without this, each trace plays once and stops offering new bytes after the end.
+
 Examples:
 
 ```bash
