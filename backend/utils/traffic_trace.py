@@ -206,53 +206,68 @@ def validate_preaggregated_trace_csv(path: str, sample_rows: int = 10) -> Dict[s
 
     Returns a dict with keys: exists, valid, error, columns, sample_count.
     """
+    # Prepare the result envelope with defaults
     res: Dict[str, Any] = {
         "kind": "agg",
         "path": path,
-        "exists": os.path.exists(path),
-        "valid": False,
-        "error": None,
-        "columns": {},
-        "sample_count": 0,
+        "exists": os.path.exists(path),  # does the file exist on disk?
+        "valid": False,                  # will be set true only after checks pass
+        "error": None,                   # carries a human-readable error message
+        "columns": {},                   # maps canonical names -> actual header used
+        "sample_count": 0,               # number of rows we could parse in the sample
     }
     if not res["exists"]:
-        res["error"] = "File not found"
+        res["error"] = "File not found"   # short-circuit when path is missing
         return res
 
     try:
         with open(path, "r", newline="") as f:
+            # Use DictReader to access values by column name
             reader = csv.DictReader(f)
+            # If the CSV has no header row, DictReader.fieldnames is None
             if reader.fieldnames is None:
                 res["error"] = "CSV has no header"
                 return res
+            # Build a map of header name -> original header (trim whitespace)
             fields = {name.strip(): name for name in reader.fieldnames}
+            # Accept any of these time headers (case-sensitive at this point)
             t_keys = [k for k in ("t_s", "time", "timestamp") if k in fields]
+            # Data columns: dl_bytes required; ul_bytes optional
             dl_key = fields.get("dl_bytes")
             ul_key = fields.get("ul_bytes")
+            # Fail fast when time column is missing
             if not t_keys:
                 res["error"] = "Missing time column (t_s/time/timestamp)"
                 return res
+            # Fail fast when dl_bytes is missing
             if dl_key is None:
                 res["error"] = "Missing 'dl_bytes' column"
                 return res
+            # Record which concrete header names we will use
             res["columns"] = {"time": t_keys[0], "dl_bytes": dl_key, "ul_bytes": ul_key}
 
+            # Read a small sample to confirm numeric parsing works
             rows = _first_n(reader, sample_rows)
             ok_rows = 0
             for row in rows:
                 try:
+                    # Must be able to parse time and dl_bytes as numbers
                     float(row[t_keys[0]])
                     float(row[dl_key])
                     ok_rows += 1
                 except Exception:
+                    # Ignore individual bad lines in the sample
                     continue
             res["sample_count"] = ok_rows
+            # If none of the sampled rows were valid, treat as invalid trace
             if ok_rows == 0:
                 res["error"] = "No parsable rows in first sample"
                 return res
+            # All checks passed for the sample; mark as valid
             res["valid"] = True
             return res
     except Exception as e:
+        # Any unexpected error (e.g., I/O) becomes the error message
         res["error"] = str(e)
         return res
 
@@ -265,17 +280,18 @@ def validate_raw_packet_trace_csv(path: str, sample_rows: int = 100) -> Dict[str
 
     Returns a dict with keys: exists, valid, error, columns, sample_count.
     """
+    # Result envelope with default values
     res: Dict[str, Any] = {
-        "kind": "raw",
-        "path": path,
-        "exists": os.path.exists(path),
-        "valid": False,
-        "error": None,
-        "columns": {},
-        "sample_count": 0,
+        "kind": "raw",                  # validator kind
+        "path": path,                    # original path we attempted to validate
+        "exists": os.path.exists(path),  # quick existence check
+        "valid": False,                  # set to True only after checks pass
+        "error": None,                   # human‑readable failure reason
+        "columns": {},                   # resolved header names used
+        "sample_count": 0,               # number of rows in the sample that parsed OK
     }
     if not res["exists"]:
-        res["error"] = "File not found"
+        res["error"] = "File not found"  # short‑circuit if the file is missing
         return res
 
     try:
@@ -286,15 +302,18 @@ def validate_raw_packet_trace_csv(path: str, sample_rows: int = 100) -> Dict[str
             except StopIteration:
                 res["error"] = "Empty CSV"
                 return res
+            # Build a lower‑cased header name -> index map for tolerant lookups
             name_map: Dict[str, int] = {h.strip().lower(): i for i, h in enumerate(header)}
             try:
+                # Locate the required columns (accept common variants)
                 idx_time = _find_col(name_map, ["t_s", "time", "timestamp", "frame.time_epoch"])  # type: ignore[arg-type]
-                idx_src = _find_col(name_map, ["source", "src", "ip.src"])  # type: ignore[arg-type]
-                idx_dst = _find_col(name_map, ["destination", "dst", "ip.dst"])  # type: ignore[arg-type]
-                idx_len = _find_col(name_map, ["length", "len", "frame.len", "bytes", "size"])  # type: ignore[arg-type]
+                idx_src  = _find_col(name_map, ["source", "src", "ip.src"])                      # type: ignore[arg-type]
+                idx_dst  = _find_col(name_map, ["destination", "dst", "ip.dst"])                  # type: ignore[arg-type]
+                idx_len  = _find_col(name_map, ["length", "len", "frame.len", "bytes", "size"])  # type: ignore[arg-type]
             except KeyError as e:
                 res["error"] = str(e)
                 return res
+            # Record the concrete header names we resolved for logs/debug
             res["columns"] = {
                 "time": list(name_map.keys())[idx_time] if idx_time is not None else None,
                 "src": list(name_map.keys())[idx_src] if idx_src is not None else None,
@@ -302,16 +321,18 @@ def validate_raw_packet_trace_csv(path: str, sample_rows: int = 100) -> Dict[str
                 "len": list(name_map.keys())[idx_len] if idx_len is not None else None,
             }
 
+            # Sample a few rows to ensure fields are numeric
             rows = _first_n(reader, sample_rows)
             ok_rows = 0
             for row in rows:
+                # Skip rows that are too short to contain all indices
                 if not row or len(row) <= max(idx_time, idx_src, idx_dst, idx_len):
                     continue
                 try:
-                    float(row[idx_time])
-                    float(row[idx_len])
+                    float(row[idx_time])  # time must be numeric
+                    float(row[idx_len])   # length must be numeric
                 except Exception:
-                    continue
+                    continue  # tolerate a few malformed lines in the sample
                 ok_rows += 1
             res["sample_count"] = ok_rows
             if ok_rows == 0:
