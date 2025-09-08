@@ -157,19 +157,43 @@ python main.py --preset simple --mode headless --steps 180 \
   --trace-raw-map IMSI_1:backend/assets/traces/urllc_04_10.csv:172.30.1.1 \
   --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic
 
-# Three stationary UEs (raw traces only), headless
+# Three stationary UEs (raw traces only), headless (one per slice)
 python main.py --preset simple --mode headless --steps 180 \
   --freeze-mobility \
-  --ue-embb 3 --ue-urllc 0 --ue-mmtc 0 \
+  --ue-embb 1 --ue-urllc 1 --ue-mmtc 1 \
   --trace-raw-map IMSI_0:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
   --trace-raw-map IMSI_1:backend/assets/traces/urllc_04_10.csv:172.30.1.1 \
   --trace-raw-map IMSI_2:backend/assets/traces/mmtc_04_10.csv:172.30.1.1 \
   --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic
 
-# Three stationary UEs (raw traces only), server mode
+# Three stationary UEs, eMBB-only (all use eMBB trace)
+python backend/main.py --preset simple --mode headless --steps 180 \
+  --freeze-mobility --ue-embb 3 --ue-urllc 0 --ue-mmtc 0 \
+  --trace-raw-map IMSI_0:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
+  --trace-raw-map IMSI_1:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
+  --trace-raw-map IMSI_2:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
+  --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic
+
+# Three stationary UEs, URLLC-only (all use URLLC trace)
+python backend/main.py --preset simple --mode headless --steps 180 \
+  --freeze-mobility --ue-embb 0 --ue-urllc 3 --ue-mmtc 0 \
+  --trace-raw-map IMSI_0:backend/assets/traces/urllc_04_10.csv:172.30.1.1 \
+  --trace-raw-map IMSI_1:backend/assets/traces/urllc_04_10.csv:172.30.1.1 \
+  --trace-raw-map IMSI_2:backend/assets/traces/urllc_04_10.csv:172.30.1.1 \
+  --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic
+
+# Three stationary UEs, mMTC-only (all use mMTC trace)
+python backend/main.py --preset simple --mode headless --steps 180 \
+  --freeze-mobility --ue-embb 0 --ue-urllc 0 --ue-mmtc 3 \
+  --trace-raw-map IMSI_0:backend/assets/traces/mmtc_04_10.csv:172.30.1.1 \
+  --trace-raw-map IMSI_1:backend/assets/traces/mmtc_04_10.csv:172.30.1.1 \
+  --trace-raw-map IMSI_2:backend/assets/traces/mmtc_04_10.csv:172.30.1.1 \
+  --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic
+
+# Three stationary UEs (raw traces only), server mode (one per slice)
 python main.py --preset simple --mode server \
   --freeze-mobility \
-  --ue-embb 3 --ue-urllc 0 --ue-mmtc 0 \
+  --ue-embb 1 --ue-urllc 1 --ue-mmtc 1 \
   --trace-raw-map IMSI_0:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
   --trace-raw-map IMSI_1:backend/assets/traces/urllc_04_10.csv:172.30.1.1 \
   --trace-raw-map IMSI_2:backend/assets/traces/mmtc_04_10.csv:172.30.1.1 \
