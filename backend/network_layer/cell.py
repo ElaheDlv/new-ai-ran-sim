@@ -368,8 +368,9 @@ class Cell:
             # After serving downlink data (after buffer update)
             if getattr(ue, "_trace_samples", None) is not None:
                 # Transmission delay for this step
-                transmission_delay = (take * 8) / served_bps if served_bps > 0 else 0
-                print("Transmission Delay:", transmission_delay)
+                #transmission_delay = (take * 8) / served_bps if served_bps > 0 else 0
+                #print("Transmission Delay:", transmission_delay)
+                transmission_delay = 0.0
                 # Queuing delay: remaining buffer to be served
                 queuing_delay = (ue.dl_buffer_bytes * 8) / cap_bps if cap_bps > 0 else 0
                 print("Queuing Delay:", queuing_delay)
