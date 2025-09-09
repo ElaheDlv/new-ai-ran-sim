@@ -72,7 +72,7 @@ class xAppLiveKPIDashboard(xAppBase):
         self._ue_dl_buf  = defaultdict(_deque)      # optional: {IMSI: deque}
         self._ue_dl_prb  = defaultdict(_deque)      # from cell allocation map if present
         self._ue_dl_prb_req = defaultdict(_deque)   # requested PRBs per UE if exposed by Cell
-        #self._ue_dl_latency = defaultdict(_deque)  # {IMSI: deque}
+        self._ue_dl_latency = defaultdict(_deque)  # {IMSI: deque}
         
         # --- Per‑Cell series ---
         self._cell_dl_load    = defaultdict(_deque)  # {cell_id: deque in [0,1]}
@@ -130,9 +130,9 @@ class xAppLiveKPIDashboard(xAppBase):
                     self._ue_dl_buf[imsi].append(float(getattr(ue, "dl_buffer_bytes", 0.0) or 0.0))
 
 
-                # # Downlink latency (if UE exposes it)
-                # dl_latency = float(getattr(ue, "downlink_latency", 0.0) or 0.0)
-                # self._ue_dl_latency[imsi].append(dl_latency)
+                # Downlink latency (if UE exposes it)
+                dl_latency = float(getattr(ue, "downlink_latency", 0.0) or 0.0)
+                self._ue_dl_latency[imsi].append(dl_latency)
                 
                 
                 # Allocated PRBs for this UE (DL)
@@ -284,7 +284,7 @@ class xAppLiveKPIDashboard(xAppBase):
                 html.Div(style=ROW_1COL, children=[dcc.Graph(id="cell-load")]),
                 html.Div(style=ROW_1COL, children=[dcc.Graph(id="ue-buffer")]),
                 
-                #html.Div(style=ROW_1COL, children=[dcc.Graph(id="ue-dl-latency")]),
+                html.Div(style=ROW_1COL, children=[dcc.Graph(id="ue-dl-latency")]),
 
                 dcc.Interval(id="tick", interval=int(REFRESH_SEC * 1000), n_intervals=0),
             ],
@@ -392,6 +392,7 @@ class xAppLiveKPIDashboard(xAppBase):
             Output("cell-load", "figure"),
             Output("ue-buffer", "figure"),
             Output("ue-slice-list", "children"),
+            Output("ue-dl-latency", "figure"),
             Input("tick", "n_intervals"),
         )
         def _update(_n):
@@ -471,12 +472,12 @@ class xAppLiveKPIDashboard(xAppBase):
 
 
 
-                # tr_latency = []
-                # for imsi in ue_keys:
-                #     ys = list(self._ue_dl_latency.get(imsi, []))
-                #     if ys:
-                #         c = SLICE_COLORS.get(slice_map.get(imsi))
-                #         tr_latency.append(go.Scatter(x=tx[-len(ys):], y=ys, mode="lines", name=_label(imsi, "DL latency (s)"), line=dict(color=c)))
+                tr_latency = []
+                for imsi in ue_keys:
+                    ys = list(self._ue_dl_latency.get(imsi, []))
+                    if ys:
+                        c = SLICE_COLORS.get(slice_map.get(imsi))
+                        tr_latency.append(go.Scatter(x=tx[-len(ys):], y=ys, mode="lines", name=_label(imsi, "DL latency (s)"), line=dict(color=c)))
                 
                
                 # --- Cell load & PRBs ---
@@ -508,12 +509,12 @@ class xAppLiveKPIDashboard(xAppBase):
             fig_prb_requested = tidy(go.Figure(data=tr_prb_requested), "Per‑UE DL PRBs — REQUESTED", "PRBs")
             fig_cell = tidy(go.Figure(data=tr_cell), "Per‑Cell Load & PRBs", "Value / PRBs")
             fig_buf = tidy(go.Figure(data=tr_buf), "Per‑UE DL Buffer (bytes)*", "Bytes")
-            #fig_latency = tidy(go.Figure(data=tr_latency), "Per‑UE Downlink Latency", "Seconds")
+            fig_latency = tidy(go.Figure(data=tr_latency), "Per‑UE Downlink Latency", "Seconds")
             # UE→slice preview string (compact)
             ue_preview = ", ".join([f"{imsi}→{slice_map.get(imsi) or '?'}" for imsi in sorted(ue_keys)])
             ue_slice_children = html.Div([html.Strong("UE→Slice: "), html.Span(ue_preview)])
 
-            return fig_bitrate, fig_sinr, fig_cqi, fig_prb_granted, fig_prb_requested, fig_cell, fig_buf, ue_slice_children#,fig_latency
+            return fig_bitrate, fig_sinr, fig_cqi, fig_prb_granted, fig_prb_requested, fig_cell, fig_buf, ue_slice_children ,fig_latency
 
         def _run():
             app.run_server(host="127.0.0.1", port=DASH_PORT, debug=False)
