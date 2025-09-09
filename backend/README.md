@@ -234,6 +234,12 @@ python backend/main.py --preset simple --mode server \
   --trace-raw-map IMSI_1:backend/assets/traces/urllc_04_10.csv:172.30.1.1 \
   --trace-raw-map IMSI_2:backend/assets/traces/mmtc_04_10.csv:172.30.1.1 \
   --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic
+
+
+  # Three stationary UE (raw traces only), server mode (one per slice) use of mixed file seperated into 3 different files
+
+  python backend/main.py --preset simple --mode server   --freeze-mobility   --ue-embb 1 --ue-urllc 1 --ue-mmtc 1   --trace-raw-map IMSI_0:backend/assets/traces/eMBB.csv:172.30.1.1   --trace-raw-map IMSI_1:backend/assets/traces/URLLC.csv:172.30.1.1   --trace-raw-map IMSI_2:backend/assets/traces/mMTC.csv:172.30.1.1   --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic --trace-loop
+
 ```
 
 How it works:
