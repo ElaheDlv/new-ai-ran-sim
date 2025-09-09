@@ -365,6 +365,22 @@ class Cell:
                 ue.served_downlink_bitrate = cap_bps
                 ue.set_downlink_bitrate(cap_bps)
             # TODO: downlink and uplink latency
+            # After serving downlink data (after buffer update)
+            if getattr(ue, "_trace_samples", None) is not None:
+                # Transmission delay for this step
+                transmission_delay = (take * 8) / served_bps if served_bps > 0 else 0
+                print("Transmission Delay:", transmission_delay)
+                # Queuing delay: remaining buffer to be served
+                queuing_delay = (ue.dl_buffer_bytes * 8) / cap_bps if cap_bps > 0 else 0
+                print("Queuing Delay:", queuing_delay)
+                # Total downlink latency
+                ue.downlink_latency = transmission_delay + queuing_delay
+            else:
+                # No trace: assume no queuing, only transmission delay for a nominal packet
+                #nominal_packet_size = 1500  # bytes, typical MTU
+                #transmission_delay = (nominal_packet_size * 8) / cap_bps if cap_bps > 0 else 0
+                #ue.downlink_latency = transmission_delay
+                ue.downlink_latency = 0.0
 
     def deregister_ue(self, ue):
         if ue.ue_imsi in self.prb_ue_allocation_dict:
