@@ -240,6 +240,12 @@ python backend/main.py --preset simple --mode server \
 
   python backend/main.py --preset simple --mode server   --freeze-mobility   --ue-embb 1 --ue-urllc 1 --ue-mmtc 1   --trace-raw-map IMSI_0:backend/assets/traces/eMBB.csv:172.30.1.1   --trace-raw-map IMSI_1:backend/assets/traces/URLLC.csv:172.30.1.1   --trace-raw-map IMSI_2:backend/assets/traces/mMTC.csv:172.30.1.1   --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic --trace-loop
 
+
+# Three generated test data for three UE
+
+  python backend/main.py --preset simple --mode server   --freeze-mobility   --ue-embb 1 --ue-urllc 1 --ue-mmtc 1   --trace-raw-map IMSI_0:backend/assets/traces/embb_gen.csv:172.30.1.1   --trace-raw-map IMSI_1:backend/assets/traces/urllc_gen.csv:172.30.1.1   --trace-raw-map IMSI_2:backend/assets/traces/mmtc_gen.csv:172.30.1.1   --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic --trace-loop
+
+
 ```
 
 How it works:
