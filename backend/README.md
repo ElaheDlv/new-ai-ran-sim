@@ -254,6 +254,9 @@ python backend/main.py --preset simple --mode server \
   python backend/main.py --preset simple --mode server   --freeze-mobility   --ue-embb 1 --ue-urllc 1 --ue-mmtc 1   --trace-raw-map IMSI_0:backend/assets/traces/synthetic_embb_queueing.csv:172.30.1.1   --trace-raw-map IMSI_1:backend/assets/traces/synthetic_urllc_queueing.csv:172.30.1.1   --trace-raw-map IMSI_2:backend/assets/traces/synthetic_mmtc_queueing.csv:172.30.1.1   --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic --trace-loop
 
 
+python backend/main.py --preset simple --mode server   --freeze-mobility   --ue-embb 1 --ue-urllc 1 --ue-mmtc 1   --trace-raw-map IMSI_0:backend/assets/traces/eMBB_aligned.csv:172.30.1.1   --trace-raw-map IMSI_1:backend/assets/traces/URLLC_aligned.csv:172.30.1.1   --trace-raw-map IMSI_2:backend/assets/traces/mMTC_aligned.csv:172.30.1.1   --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic --trace-loop
+
+
 ```
 
 How it works:
