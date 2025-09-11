@@ -281,12 +281,43 @@ Drop-in xApp that starts a Dash server at `http://localhost:8061` and streams pe
   - `Max DL PRBs per UE` cap (applies live to all cells).
   - Slice share sliders (fractions 0–1 per slice). Sum > 1 is normalized; < 1 leaves some PRBs unused.
   - “Move RB” buttons to shift PRBs between slices (paper-like actions). Default step moves 3 PRBs per click; change in `network_layer/xApps/xapp_live_kpi_dashboard.py` by editing `SLICE_MOVE_STEP_PRBS`.
+  - Optional history range slider, plot history window size, and CSV logging (see below).
 
 Slice share semantics:
 
 - For each cell, `quota[slice] = floor(max_dl_prb_cell × share[slice])`.
 - UEs in a slice share only that slice’s quota. Baseline 1 PRB/UE if possible, remainder proportional to demand.
 - Per‑UE cap is enforced after slice allocation.
+
+---
+
+### KPI History, Range Slider, and Logging
+
+Enable interactive history navigation on charts (range slider), configure how many points the live plots keep in memory, and optionally persist KPIs to CSV.
+
+- CLI flags:
+  - `--kpi-history`: enable a per‑chart range slider and preserve zoom/pan across live updates.
+  - `--kpi-max-points <N>`: number of points kept in memory for plots (default 50). Use `0` for unbounded history.
+  - `--kpi-log`: write per‑step UE/Cell KPIs to CSV files.
+  - `--kpi-log-dir <path>`: output directory for KPI CSVs (default `backend/kpi_logs`).
+
+- Environment variables (alternative):
+  - `RAN_KPI_HISTORY_ENABLE=1`
+  - `RAN_KPI_MAX_POINTS=<N>` (0 = unbounded)
+  - `RAN_KPI_LOG_ENABLE=1`
+  - `RAN_KPI_LOG_DIR=<path>`
+
+- Example (server mode):
+```bash
+python backend/main.py --preset simple --mode server \
+  --kpi-history --kpi-max-points 10000 --kpi-log --kpi-log-dir backend/kpi_logs
+# KPI dashboard at http://localhost:8061
+```
+
+Notes:
+- With the history slider enabled, legends are placed at the top to avoid overlap with the slider.
+- Unbounded history (0) grows with runtime and number of UEs; prefer a large but finite window for long runs (e.g., 5000–20000).
+- CSV logs include one row per UE and per cell per step. UE CSV columns: `sim_step, imsi, dl_bps, dl_mbps, sinr_db, cqi, dl_buffer_bytes, dl_prb_granted, dl_prb_requested, dl_latency_ms`. Cell CSV: `sim_step, cell_id, dl_load, allocated_prb, max_prb`.
 
 ---
 

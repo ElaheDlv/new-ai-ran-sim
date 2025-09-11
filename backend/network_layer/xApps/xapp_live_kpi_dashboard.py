@@ -13,10 +13,18 @@ from settings import (
     RAN_PRB_CAP_SLIDER_MAX,
     RAN_SLICE_DL_PRB_SPLIT_DEFAULT,
     RAN_SLICE_KNOB_STEP_FRAC,
+    RAN_KPI_MAX_POINTS,
+    RAN_KPI_LOG_ENABLE,
+    RAN_KPI_LOG_DIR,
+    RAN_KPI_HISTORY_ENABLE,
 )
 
+import os
+import csv
+from datetime import datetime
+
 # Rolling window sizing and refresh
-MAX_POINTS = 50
+MAX_POINTS = RAN_KPI_MAX_POINTS
 REFRESH_SEC = 0.5
 DASH_PORT = 8061
 SLICE_MOVE_STEP_PRBS = 1  # Treat one RB (paper) as 1 PRBs here
@@ -41,20 +49,38 @@ ROW_1COL = {"display": "grid", "gridTemplateColumns": "1fr", "gap": "12px"}
 
 
 def tidy(fig, title, ytitle):
+    base_margin = dict(l=40, r=10, t=40, b=35)
+    base_legend = dict(orientation="h", y=-0.25, x=0)  # below when no slider
+
+    # If history slider is enabled, move legend to the top and add space for the slider
+    if RAN_KPI_HISTORY_ENABLE:
+        base_margin = dict(l=50, r=20, t=70, b=80)
+        base_legend = dict(orientation="h", x=0, y=1.02, xanchor="left", yanchor="bottom")
+
     fig.update_layout(
         title=title,
         xaxis_title="Sim step",
         yaxis_title=ytitle,
         height=320,
-        margin=dict(l=40, r=10, t=40, b=35),
-        legend=dict(orientation="h", y=-0.25, x=0),
+        margin=base_margin,
+        legend=base_legend,
         template="plotly_white",
+        # Preserve user zoom/pan across live updates
+        uirevision="kpi-static",
     )
+    # Optional history range slider per chart
+    if RAN_KPI_HISTORY_ENABLE:
+        try:
+            fig.update_xaxes(rangeslider=dict(visible=True, thickness=0.12))
+        except Exception:
+            pass
     return fig
 
 
 def _deque():
-    return deque(maxlen=MAX_POINTS)
+    # If MAX_POINTS <= 0, keep unbounded history
+    maxlen = None if (MAX_POINTS is None or MAX_POINTS <= 0) else int(MAX_POINTS)
+    return deque(maxlen=maxlen)
 
 
 class xAppLiveKPIDashboard(xAppBase):
@@ -92,11 +118,61 @@ class xAppLiveKPIDashboard(xAppBase):
         # Live control (per‑UE PRB cap)
         self._prb_cap = None
 
+        # KPI logging
+        self._log_enabled = RAN_KPI_LOG_ENABLE
+        self._log_dir = RAN_KPI_LOG_DIR
+        self._run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self._ue_log_fp = None
+        self._cell_log_fp = None
+        self._ue_log_csv = None
+        self._cell_log_csv = None
+
     # ---------------- xApp lifecycle ----------------
     def start(self):
         if not self.enabled:
             print(f"{self.xapp_id}: disabled")
             return
+        # Initialize logging if enabled
+        if self._log_enabled:
+            try:
+                os.makedirs(self._log_dir, exist_ok=True)
+                ue_path = os.path.join(self._log_dir, f"ue_kpis_{self._run_id}.csv")
+                cell_path = os.path.join(self._log_dir, f"cell_kpis_{self._run_id}.csv")
+                self._ue_log_fp = open(ue_path, "w", newline="")
+                self._cell_log_fp = open(cell_path, "w", newline="")
+                self._ue_log_csv = csv.DictWriter(
+                    self._ue_log_fp,
+                    fieldnames=[
+                        "sim_step",
+                        "imsi",
+                        "dl_bps",
+                        "dl_mbps",
+                        "sinr_db",
+                        "cqi",
+                        "dl_buffer_bytes",
+                        "dl_prb_granted",
+                        "dl_prb_requested",
+                        "dl_latency_ms",
+                    ],
+                )
+                self._ue_log_csv.writeheader()
+                self._cell_log_csv = csv.DictWriter(
+                    self._cell_log_fp,
+                    fieldnames=[
+                        "sim_step",
+                        "cell_id",
+                        "dl_load",
+                        "allocated_prb",
+                        "max_prb",
+                    ],
+                )
+                self._cell_log_csv.writeheader()
+                print(
+                    f"{self.xapp_id}: KPI logging enabled. UE log: {ue_path} | Cell log: {cell_path}"
+                )
+            except Exception as e:
+                print(f"{self.xapp_id}: Failed to initialize KPI logging: {e}")
+                self._log_enabled = False
         self._start_dashboard()
 
     def step(self):
@@ -127,7 +203,8 @@ class xAppLiveKPIDashboard(xAppBase):
 
                 # Optional queues/buffers (if UE defines them)
                 if hasattr(ue, "dl_buffer_bytes"):
-                    self._ue_dl_buf[imsi].append(float(getattr(ue, "dl_buffer_bytes", 0.0) or 0.0))
+                    buf = float(getattr(ue, "dl_buffer_bytes", 0.0) or 0.0)
+                    self._ue_dl_buf[imsi].append(buf)
 
 
                 # Downlink latency (if UE exposes it)
@@ -137,6 +214,8 @@ class xAppLiveKPIDashboard(xAppBase):
                 
                 # Allocated PRBs for this UE (DL)
                 cell = getattr(ue, "current_cell", None)
+                dl_prb = None
+                dl_requested = None
                 if cell is not None:
                     alloc_map = getattr(cell, "prb_ue_allocation_dict", {}) or {}
                     ue_alloc = alloc_map.get(imsi, {})
@@ -149,6 +228,26 @@ class xAppLiveKPIDashboard(xAppBase):
                     dl_requested = dl_req_map.get(imsi, None)
                     if dl_requested is not None:
                         self._ue_dl_prb_req[imsi].append(float(dl_requested))
+
+                # Logging per‑UE KPIs (one row per UE per step)
+                if self._log_enabled and self._ue_log_csv is not None:
+                    try:
+                        self._ue_log_csv.writerow(
+                            {
+                                "sim_step": sim_step,
+                                "imsi": imsi,
+                                "dl_bps": dl_bps,
+                                "dl_mbps": dl_bps / 1e6,
+                                "sinr_db": float(getattr(ue, "downlink_sinr", 0.0) or 0.0),
+                                "cqi": float(getattr(ue, "downlink_cqi", 0.0) or 0.0),
+                                "dl_buffer_bytes": float(getattr(ue, "dl_buffer_bytes", 0.0) or 0.0),
+                                "dl_prb_granted": float(dl_prb) if dl_prb is not None else "",
+                                "dl_prb_requested": float(dl_requested) if dl_requested is not None else "",
+                                "dl_latency_ms": dl_latency * 1000.0,
+                            }
+                        )
+                    except Exception:
+                        pass
                         
 
 
@@ -166,6 +265,31 @@ class xAppLiveKPIDashboard(xAppBase):
                 max_prb = getattr(cell, "max_dl_prb", None)
                 if max_prb is not None:
                     self._cell_max_prb[cell_id].append(float(max_prb))
+
+                # Logging per‑cell KPIs (one row per cell per step)
+                if self._log_enabled and self._cell_log_csv is not None:
+                    try:
+                        self._cell_log_csv.writerow(
+                            {
+                                "sim_step": sim_step,
+                                "cell_id": cell_id,
+                                "dl_load": float(load) if load is not None else "",
+                                "allocated_prb": float(alloc_dl) if alloc_dl is not None else "",
+                                "max_prb": float(max_prb) if max_prb is not None else "",
+                            }
+                        )
+                    except Exception:
+                        pass
+
+            # Flush logs to disk each step (small runs; fine for now)
+            if self._log_enabled:
+                try:
+                    if self._ue_log_fp:
+                        self._ue_log_fp.flush()
+                    if self._cell_log_fp:
+                        self._cell_log_fp.flush()
+                except Exception:
+                    pass
 
     # ---------------- Dash server ----------------
     def _start_dashboard(self):
@@ -476,8 +600,10 @@ class xAppLiveKPIDashboard(xAppBase):
                 for imsi in ue_keys:
                     ys = list(self._ue_dl_latency.get(imsi, []))
                     if ys:
+                        # Convert seconds to milliseconds for plotting
+                        ys_ms = [v * 1000.0 for v in ys]
                         c = SLICE_COLORS.get(slice_map.get(imsi))
-                        tr_latency.append(go.Scatter(x=tx[-len(ys):], y=ys, mode="lines", name=_label(imsi, "DL latency (s)"), line=dict(color=c)))
+                        tr_latency.append(go.Scatter(x=tx[-len(ys_ms):], y=ys_ms, mode="lines", name=_label(imsi, "DL latency (ms)"), line=dict(color=c)))
                 
                
                 # --- Cell load & PRBs ---
@@ -509,7 +635,7 @@ class xAppLiveKPIDashboard(xAppBase):
             fig_prb_requested = tidy(go.Figure(data=tr_prb_requested), "Per‑UE DL PRBs — REQUESTED", "PRBs")
             fig_cell = tidy(go.Figure(data=tr_cell), "Per‑Cell Load & PRBs", "Value / PRBs")
             fig_buf = tidy(go.Figure(data=tr_buf), "Per‑UE DL Buffer (bytes)*", "Bytes")
-            fig_latency = tidy(go.Figure(data=tr_latency), "Per‑UE Downlink Latency", "Seconds")
+            fig_latency = tidy(go.Figure(data=tr_latency), "Per‑UE Downlink Latency", "Milliseconds")
             # UE→slice preview string (compact)
             ue_preview = ", ".join([f"{imsi}→{slice_map.get(imsi) or '?'}" for imsi in sorted(ue_keys)])
             ue_slice_children = html.Div([html.Strong("UE→Slice: "), html.Span(ue_preview)])
@@ -522,3 +648,16 @@ class xAppLiveKPIDashboard(xAppBase):
         self._dash_thread = threading.Thread(target=_run, daemon=True)
         self._dash_thread.start()
         print(f"{self.xapp_id}: live KPI dashboard at http://localhost:{DASH_PORT}")
+
+    def __del__(self):
+        # Best-effort close of log file handles
+        try:
+            if self._ue_log_fp:
+                self._ue_log_fp.close()
+        except Exception:
+            pass
+        try:
+            if self._cell_log_fp:
+                self._cell_log_fp.close()
+        except Exception:
+            pass

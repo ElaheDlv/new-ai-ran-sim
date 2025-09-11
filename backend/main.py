@@ -24,6 +24,27 @@ parser.add_argument(
     "--mode", choices=["server", "headless"], default="server", help="Run as WebSocket server or headless loop",
 )
 parser.add_argument("--steps", type=int, default=120, help="Headless: number of steps to run")
+# KPI dashboard controls
+parser.add_argument(
+    "--kpi-max-points",
+    type=int,
+    help="Live KPI plot history length (points); 0 = unbounded",
+)
+parser.add_argument(
+    "--kpi-history",
+    action="store_true",
+    help="Enable interactive history slider on KPI charts",
+)
+parser.add_argument(
+    "--kpi-log",
+    action="store_true",
+    help="Enable CSV logging of per-step KPIs",
+)
+parser.add_argument(
+    "--kpi-log-dir",
+    type=str,
+    help="Directory to write KPI CSV logs",
+)
 # Trace replay options
 parser.add_argument(
     "--trace-speedup",
@@ -98,6 +119,16 @@ if args.ue_mmtc is not None:
     os.environ["UE_SIMPLE_COUNT_MMTC"] = str(args.ue_mmtc)
 if args.freeze_mobility:
     os.environ["SIM_FREEZE_MOBILITY"] = "1"
+
+# KPI dashboard env exports
+if args.kpi_max_points is not None:
+    os.environ["RAN_KPI_MAX_POINTS"] = str(args.kpi_max_points)
+if args.kpi_history:
+    os.environ["RAN_KPI_HISTORY_ENABLE"] = "1"
+if args.kpi_log:
+    os.environ["RAN_KPI_LOG_ENABLE"] = "1"
+if args.kpi_log_dir:
+    os.environ["RAN_KPI_LOG_DIR"] = args.kpi_log_dir
 
 # Trace mapping and options (export via env before importing settings)
 if args.trace_speedup is not None:

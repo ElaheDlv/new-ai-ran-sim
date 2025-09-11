@@ -38,8 +38,23 @@ RAN_SLICE_DL_PRB_SPLIT_DEFAULT = {
     "mMTC": 0.1,
 }
 
-# UI knob step for slice split sliders
-RAN_SLICE_KNOB_STEP_FRAC = 0.05
+# UI knob step for slice split sliders (set small for near‑continuous control)
+RAN_SLICE_KNOB_STEP_FRAC = 0.001
+
+# KPI dashboard history and logging
+# Rolling window length for live plots (points kept in memory). Set 0 for unbounded.
+try:
+    RAN_KPI_MAX_POINTS = int(os.getenv("RAN_KPI_MAX_POINTS", "50"))
+except Exception:
+    RAN_KPI_MAX_POINTS = 50
+
+# Enable CSV logging of KPIs each simulation step
+RAN_KPI_LOG_ENABLE = os.getenv("RAN_KPI_LOG_ENABLE", "0") in ("1", "true", "True")
+# Output directory for KPI logs
+RAN_KPI_LOG_DIR = os.getenv("RAN_KPI_LOG_DIR", "backend/kpi_logs")
+
+# Enable interactive history navigation (range slider) on KPI charts
+RAN_KPI_HISTORY_ENABLE = os.getenv("RAN_KPI_HISTORY_ENABLE", "0") in ("1", "true", "True")
 
 # ETSI TS 138 214 V15.3.0. Release 15 Table 5.1.3.1-2 MCS index table 2 for PDSCH
 # MCS Index (I_MCS) | Modulation Order Qm | Target code Rate R x [1024] | Spectral efficiency
