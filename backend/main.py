@@ -45,6 +45,16 @@ parser.add_argument(
     type=str,
     help="Directory to write KPI CSV logs",
 )
+
+# DQN PRB allocator controls
+parser.add_argument("--dqn-prb", action="store_true", help="Enable DQN PRB allocator xApp")
+parser.add_argument("--dqn-train", action="store_true", help="Train online (epsilon-greedy)")
+parser.add_argument("--dqn-model", type=str, help="Path to load/save DQN model")
+parser.add_argument("--dqn-epsilon-start", type=float, help="Epsilon start for exploration")
+parser.add_argument("--dqn-epsilon-end", type=float, help="Epsilon end for exploration")
+parser.add_argument("--dqn-epsilon-decay", type=int, help="Epsilon decay steps")
+parser.add_argument("--dqn-period", type=int, help="Decision period in sim steps")
+parser.add_argument("--dqn-move-step", type=int, help="PRBs moved per action")
 # Trace replay options
 parser.add_argument(
     "--trace-speedup",
@@ -129,6 +139,24 @@ if args.kpi_log:
     os.environ["RAN_KPI_LOG_ENABLE"] = "1"
 if args.kpi_log_dir:
     os.environ["RAN_KPI_LOG_DIR"] = args.kpi_log_dir
+
+# DQN env exports
+if args.dqn_prb:
+    os.environ["DQN_PRB_ENABLE"] = "1"
+if args.dqn_train:
+    os.environ["DQN_PRB_TRAIN"] = "1"
+if args.dqn_model:
+    os.environ["DQN_PRB_MODEL_PATH"] = args.dqn_model
+if args.dqn_epsilon_start is not None:
+    os.environ["DQN_PRB_EPSILON_START"] = str(args.dqn_epsilon_start)
+if args.dqn_epsilon_end is not None:
+    os.environ["DQN_PRB_EPSILON_END"] = str(args.dqn_epsilon_end)
+if args.dqn_epsilon_decay is not None:
+    os.environ["DQN_PRB_EPSILON_DECAY"] = str(args.dqn_epsilon_decay)
+if args.dqn_period is not None:
+    os.environ["DQN_PRB_DECISION_PERIOD_STEPS"] = str(args.dqn_period)
+if args.dqn_move_step is not None:
+    os.environ["DQN_PRB_MOVE_STEP"] = str(args.dqn_move_step)
 
 # Trace mapping and options (export via env before importing settings)
 if args.trace_speedup is not None:

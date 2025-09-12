@@ -118,6 +118,51 @@ RAN_MCS_SPECTRAL_EFFICIENCY_TABLE = {
 }
 
 
+# ---------------------------
+# DQN PRB Allocator (xApp) settings
+# ---------------------------
+# Enable/disable DQN xApp
+DQN_PRB_ENABLE = os.getenv("DQN_PRB_ENABLE", "0") in ("1", "true", "True")
+# Train online (epsilon-greedy + replay) vs. inference-only
+DQN_PRB_TRAIN = os.getenv("DQN_PRB_TRAIN", "1") in ("1", "true", "True")
+# Steps between actions (period in sim steps)
+try:
+    DQN_PRB_DECISION_PERIOD_STEPS = int(os.getenv("DQN_PRB_DECISION_PERIOD_STEPS", "1"))
+except Exception:
+    DQN_PRB_DECISION_PERIOD_STEPS = 1
+# PRBs moved per action (Table 3 uses 1 RB; treat RB=PRB here)
+try:
+    DQN_PRB_MOVE_STEP = int(os.getenv("DQN_PRB_MOVE_STEP", "1"))
+except Exception:
+    DQN_PRB_MOVE_STEP = 1
+
+# DQN hyperparameters
+try:
+    DQN_PRB_EPSILON_START = float(os.getenv("DQN_PRB_EPSILON_START", "1.0"))
+    DQN_PRB_EPSILON_END = float(os.getenv("DQN_PRB_EPSILON_END", "0.1"))
+    DQN_PRB_EPSILON_DECAY = int(os.getenv("DQN_PRB_EPSILON_DECAY", "10000"))
+    DQN_PRB_GAMMA = float(os.getenv("DQN_PRB_GAMMA", "0.99"))
+    DQN_PRB_LR = float(os.getenv("DQN_PRB_LR", "1e-3"))
+    DQN_PRB_BATCH = int(os.getenv("DQN_PRB_BATCH", "64"))
+    DQN_PRB_BUFFER = int(os.getenv("DQN_PRB_BUFFER", "50000"))
+except Exception:
+    DQN_PRB_EPSILON_START, DQN_PRB_EPSILON_END, DQN_PRB_EPSILON_DECAY = 1.0, 0.1, 10000
+    DQN_PRB_GAMMA, DQN_PRB_LR, DQN_PRB_BATCH, DQN_PRB_BUFFER = 0.99, 1e-3, 64, 50000
+
+# Reward shaping weights and parameters
+try:
+    DQN_WEIGHT_EMBB = float(os.getenv("DQN_WEIGHT_EMBB", "0.33"))
+    DQN_WEIGHT_URLLC = float(os.getenv("DQN_WEIGHT_URLLC", "0.34"))
+    DQN_WEIGHT_MMTC = float(os.getenv("DQN_WEIGHT_MMTC", "0.33"))
+    DQN_URLLC_GAMMA_S = float(os.getenv("DQN_URLLC_GAMMA_S", "0.01"))  # 10 ms
+except Exception:
+    DQN_WEIGHT_EMBB, DQN_WEIGHT_URLLC, DQN_WEIGHT_MMTC = 0.33, 0.34, 0.33
+    DQN_URLLC_GAMMA_S = 0.01
+
+# Model path
+DQN_PRB_MODEL_PATH = os.getenv("DQN_PRB_MODEL_PATH", "backend/models/dqn_prb.pt")
+
+
 RAN_TOPOLOGY_PRESET = os.getenv("RAN_TOPOLOGY_PRESET", "default")  # 'default' or 'simple'
 
 

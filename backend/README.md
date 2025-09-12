@@ -328,8 +328,41 @@ Example xApps are located in the `network_layer/xApps/` directory:
 - Blind Handover xApp: Implements handover decisions based on RRC Event A3.
 - AI service monitoring xApp: Monitors the AI service performance and provides insights.
  - Live KPI Dashboard xApp: Real‑time UE/Cell KPIs with per‑UE cap and per‑slice PRB controls.
+ - DQN PRB Allocator xApp: Learns to shift DL PRBs among slices (eMBB/URLLC/mMTC) using a DQN policy inspired by the Tractor paper.
 
 To load custom xApps, add them to the xApps/ directory and ensure they inherit from the xAppBase class.
+
+### DQN PRB Allocator xApp
+
+The DQN xApp implements a small DQN agent that observes per‑cell state and applies the 7 actions from Table 3 in the Tractor paper (move one PRB between slices or keep).
+
+- State per cell: `[#mMTC UEs, #URLLC UEs, #eMBB UEs, PRBs_mMTC, PRBs_URLLC]` (eMBB PRBs are implied by the total).
+- Actions: `0=keep, 1=mMTC→URLLC, 2=mMTC→eMBB, 3=URLLC→mMTC, 4=URLLC→eMBB, 5=eMBB→mMTC, 6=eMBB→URLLC`.
+- Reward: weighted sum of per‑slice scores (eMBB queue‑drain, URLLC queueing delay proxy, mMTC utilization/idle penalty) normalized to [0,1].
+
+Enable it at runtime (requires `torch`):
+
+```bash
+pip install torch  # if not already installed
+
+# Server mode with DQN (online training), the KPI dashboard, and range slider
+python backend/main.py --preset simple --mode server \
+  --dqn-prb --dqn-train --dqn-period 1 --dqn-move-step 1 \
+  --kpi-history --kpi-log
+```
+
+Useful flags/env vars:
+- `--dqn-prb` (or `DQN_PRB_ENABLE=1`): enable the DQN xApp.
+- `--dqn-train` (or `DQN_PRB_TRAIN=1`): online training; otherwise runs greedy inference.
+- `--dqn-model <path>` (or `DQN_PRB_MODEL_PATH`): save/load model weights.
+- `--dqn-period <steps>` (`DQN_PRB_DECISION_PERIOD_STEPS`): act every N sim steps (default 1).
+- `--dqn-move-step <PRBs>` (`DQN_PRB_MOVE_STEP`): PRBs moved per action (default 1).
+- Exploration and learning hyper‑params can be set via env vars: `DQN_PRB_EPSILON_START`, `DQN_PRB_EPSILON_END`, `DQN_PRB_EPSILON_DECAY`, `DQN_PRB_LR`, `DQN_PRB_BATCH`, `DQN_PRB_BUFFER`, `DQN_PRB_GAMMA`.
+
+Notes:
+- The xApp applies actions after each simulator step; changes take effect in the next allocation round.
+- Rewards use current KPIs and are a practical instantiation of the paper’s formulas; you can refine the shaping or weights in `settings/ran_config.py`.
+- If `torch` is unavailable, the xApp disables itself gracefully.
 
 ---
 
