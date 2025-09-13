@@ -1,3 +1,22 @@
+"""DQN-based PRB allocator xApp (with extensive inline documentation).
+
+This xApp implements a light Deep Q-Network policy that shifts downlink PRBs
+between slices in each cell. It closely follows the Tractor paper’s MDP:
+
+- State (per cell): [#mMTC UEs, #URLLC UEs, #eMBB UEs, PRBs_mMTC, PRBs_URLLC].
+  PRBs in eMBB are implicit: max_dl_prb - PRBs_mMTC - PRBs_URLLC.
+- Actions: 0=keep, 1=mMTC→URLLC, 2=mMTC→eMBB, 3=URLLC→mMTC, 4=URLLC→eMBB,
+           5=eMBB→mMTC, 6=eMBB→URLLC. Each action moves K PRBs (K is configurable).
+- Reward: weighted sum of slice‑specific scores (eMBB queue drain proxy,
+  URLLC delay proxy from buffer/rate, mMTC utilization/idle penalty).
+
+Training support:
+- Online training with epsilon‑greedy exploration, replay buffer, target network.
+- Optional telemetry: TensorBoard and Weights & Biases for metrics.
+
+All key methods include detailed comments to make the logic easy to follow.
+"""
+
 from .xapp_base import xAppBase
 
 import os
@@ -6,9 +25,9 @@ import random
 from collections import deque, defaultdict
 from datetime import datetime
 
-import settings
+import settings  # global configuration and constants
 
-try:
+try:  # torch is optional; the xApp disables itself if not available
     import torch
     import torch.nn as nn
     import torch.optim as optim
@@ -18,15 +37,21 @@ except Exception:
     TORCH_AVAILABLE = False
 
 
-SL_E = getattr(settings, "NETWORK_SLICE_EMBB_NAME", "eMBB")
-SL_U = getattr(settings, "NETWORK_SLICE_URLLC_NAME", "URLLC")
-SL_M = getattr(settings, "NETWORK_SLICE_MTC_NAME", "mMTC")
+# Short aliases for slice names (read from settings with fallbacks)
+SL_E = getattr(settings, "NETWORK_SLICE_EMBB_NAME", "eMBB")   # Enhanced Mobile Broadband
+SL_U = getattr(settings, "NETWORK_SLICE_URLLC_NAME", "URLLC")  # Ultra Reliable Low Latency
+SL_M = getattr(settings, "NETWORK_SLICE_MTC_NAME", "mMTC")     # Massive Machine Type
 
 
 if TORCH_AVAILABLE:
     class _ReplayBuffer:
+        """Minimal replay buffer for off‑policy training.
+
+        Stores tuples (state, action, reward, next_state, done) in a ring buffer
+        and supports random mini‑batch sampling.
+        """
         def __init__(self, capacity: int = 50000):
-            self.buf = deque(maxlen=int(capacity))
+            self.buf = deque(maxlen=int(capacity))  # fixed‑size circular buffer
 
         def push(self, s, a, r, ns, d):
             self.buf.append((s, a, r, ns, d))
@@ -34,8 +59,8 @@ if TORCH_AVAILABLE:
         def sample(self, batch):
             import numpy as np
 
-            batch = min(batch, len(self.buf))
-            idx = np.random.choice(len(self.buf), batch, replace=False)
+            batch = min(batch, len(self.buf))  # cap to current buffer size
+            idx = np.random.choice(len(self.buf), batch, replace=False)  # unique indices
             s, a, r, ns, d = zip(*[self.buf[i] for i in idx])
             return (
                 torch.tensor(s, dtype=torch.float32),
@@ -50,6 +75,10 @@ if TORCH_AVAILABLE:
 
 
     class _DQN(nn.Module):
+        """Small fully‑connected Q‑network.
+
+        Architecture: 2 hidden layers (64 units each, ReLU) → Q‑values.
+        """
         def __init__(self, in_dim: int, n_actions: int):
             super().__init__()
             self.net = nn.Sequential(
@@ -69,61 +98,72 @@ else:
 class xAppDQNPRBAllocator(xAppBase):
     """DQN-based PRB allocator (Table 3 actions).
 
-    - State (per cell): [#mMTC UEs, #URLLC UEs, #eMBB UEs, PRBs_mMTC, PRBs_URLLC]
-      (PRBs in eMBB implied by max_dl_prb - others)
-    - Actions: 0 keep; 1 mMTC→URLLC; 2 mMTC→eMBB; 3 URLLC→mMTC; 4 URLLC→eMBB; 5 eMBB→mMTC; 6 eMBB→URLLC
-    - Reward: weighted sum of per-slice scores described in the Tractor paper.
+    Public methods:
+    - start(): lifecycle hook when xApp is loaded
+    - step(): called every simulation step; performs observe→learn→act
+    - to_json(): returns metadata for introspection
+
+    Private helpers:
+    - _epsilon(): exploration schedule
+    - _get_state(): builds the per‑cell state vector
+    - _aggregate_slice_metrics(): aggregates KPIs needed for rewards
+    - _slice_scores(): computes eMBB/URLLC/mMTC slice scores
+    - _reward(): combines slice scores with weights
+    - _act(): epsilon‑greedy action selection
+    - _opt_step(): one optimization step on a replay mini‑batch
+    - _apply_action(): applies PRB move to cell quotas
+    - _log(): emits metrics to TB/W&B
     """
 
     def __init__(self, ric=None):
         super().__init__(ric=ric)
-        self.enabled = getattr(settings, "DQN_PRB_ENABLE", False)
+        self.enabled = getattr(settings, "DQN_PRB_ENABLE", False)  # on/off toggle
 
         # Runtime / training knobs
-        self.train_mode = getattr(settings, "DQN_PRB_TRAIN", True)
-        self.period_steps = max(1, int(getattr(settings, "DQN_PRB_DECISION_PERIOD_STEPS", 1)))
-        self.move_step = max(1, int(getattr(settings, "DQN_PRB_MOVE_STEP", 1)))
+        self.train_mode = getattr(settings, "DQN_PRB_TRAIN", True)  # train or inference only
+        self.period_steps = max(1, int(getattr(settings, "DQN_PRB_DECISION_PERIOD_STEPS", 1)))  # act every N steps
+        self.move_step = max(1, int(getattr(settings, "DQN_PRB_MOVE_STEP", 1)))  # PRBs moved per action
 
         # Reward shaping/weights
-        self.w_e = float(getattr(settings, "DQN_WEIGHT_EMBB", 0.33))
-        self.w_u = float(getattr(settings, "DQN_WEIGHT_URLLC", 0.34))
-        self.w_m = float(getattr(settings, "DQN_WEIGHT_MMTC", 0.33))
-        self.urlc_gamma_s = float(getattr(settings, "DQN_URLLC_GAMMA_S", 0.01))
+        self.w_e = float(getattr(settings, "DQN_WEIGHT_EMBB", 0.33))   # weight for eMBB slice score
+        self.w_u = float(getattr(settings, "DQN_WEIGHT_URLLC", 0.34))  # weight for URLLC slice score
+        self.w_m = float(getattr(settings, "DQN_WEIGHT_MMTC", 0.33))   # weight for mMTC slice score
+        self.urlc_gamma_s = float(getattr(settings, "DQN_URLLC_GAMMA_S", 0.01))  # max tolerable delay (s)
 
         # DQN parameters
-        self.gamma = float(getattr(settings, "DQN_PRB_GAMMA", 0.99))
-        self.lr = float(getattr(settings, "DQN_PRB_LR", 1e-3))
-        self.batch = int(getattr(settings, "DQN_PRB_BATCH", 64))
-        self.buffer_cap = int(getattr(settings, "DQN_PRB_BUFFER", 50000))
-        self.eps_start = float(getattr(settings, "DQN_PRB_EPSILON_START", 1.0))
-        self.eps_end = float(getattr(settings, "DQN_PRB_EPSILON_END", 0.1))
-        self.eps_decay = int(getattr(settings, "DQN_PRB_EPSILON_DECAY", 10000))
-        self.model_path = getattr(settings, "DQN_PRB_MODEL_PATH", "backend/models/dqn_prb.pt")
+        self.gamma = float(getattr(settings, "DQN_PRB_GAMMA", 0.99))        # discount factor
+        self.lr = float(getattr(settings, "DQN_PRB_LR", 1e-3))              # learning rate
+        self.batch = int(getattr(settings, "DQN_PRB_BATCH", 64))             # mini‑batch size
+        self.buffer_cap = int(getattr(settings, "DQN_PRB_BUFFER", 50000))    # replay capacity
+        self.eps_start = float(getattr(settings, "DQN_PRB_EPSILON_START", 1.0))  # ε start
+        self.eps_end = float(getattr(settings, "DQN_PRB_EPSILON_END", 0.1))      # ε end
+        self.eps_decay = int(getattr(settings, "DQN_PRB_EPSILON_DECAY", 10000))  # ε decay steps
+        self.model_path = getattr(settings, "DQN_PRB_MODEL_PATH", "backend/models/dqn_prb.pt")  # checkpoint
 
         # Internal state
-        self._t = 0
-        self._per_cell_prev = {}  # cell_id -> {state, action}
-        self._last_loss = None
-        self._action_counts = defaultdict(int)
+        self._t = 0  # global decision counter (used for ε schedule and logging)
+        self._per_cell_prev = {}  # cell_id -> {state, action} for previous decision
+        self._last_loss = None    # last training loss (for TB/W&B)
+        self._action_counts = defaultdict(int)  # histogram of actions taken
 
         # NN
-        self._n_actions = 7
-        self._state_dim = 5
-        self._device = torch.device("cpu") if TORCH_AVAILABLE else None
+        self._n_actions = 7  # size of the discrete action space
+        self._state_dim = 5  # length of the state vector
+        self._device = torch.device("cpu") if TORCH_AVAILABLE else None  # device for torch tensors
         if self.enabled and not TORCH_AVAILABLE:
             print(f"{self.xapp_id}: torch not available; disabling.")
             self.enabled = False
 
         # Telemetry: TensorBoard / W&B
-        self._tb = None
-        self._wandb = None
+        self._tb = None     # TensorBoard SummaryWriter (optional)
+        self._wandb = None  # Weights & Biases run object (optional)
         if self.enabled:
             os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
-            self._q = _DQN(self._state_dim, self._n_actions).to(self._device)
-            self._q_target = _DQN(self._state_dim, self._n_actions).to(self._device)
+            self._q = _DQN(self._state_dim, self._n_actions).to(self._device)          # online network
+            self._q_target = _DQN(self._state_dim, self._n_actions).to(self._device)   # target network
             self._q_target.load_state_dict(self._q.state_dict())
-            self._opt = optim.Adam(self._q.parameters(), lr=self.lr)
-            self._buf = _ReplayBuffer(self.buffer_cap)
+            self._opt = optim.Adam(self._q.parameters(), lr=self.lr)  # optimizer
+            self._buf = _ReplayBuffer(self.buffer_cap)                 # replay buffer
             # Try to load existing model
             try:
                 if os.path.exists(self.model_path):
@@ -134,7 +174,7 @@ class xAppDQNPRBAllocator(xAppBase):
                 print(f"{self.xapp_id}: failed loading model: {e}")
 
             # TensorBoard
-            if getattr(settings, "DQN_TB_ENABLE", False):
+            if getattr(settings, "DQN_TB_ENABLE", False):  # TensorBoard logging (optional)
                 try:
                     from torch.utils.tensorboard import SummaryWriter
                     base = getattr(settings, "DQN_TB_DIR", "backend/tb_logs")
@@ -147,7 +187,7 @@ class xAppDQNPRBAllocator(xAppBase):
                     print(f"{self.xapp_id}: TensorBoard unavailable: {e}")
                     self._tb = None
             # W&B
-            if getattr(settings, "DQN_WANDB_ENABLE", False):
+            if getattr(settings, "DQN_WANDB_ENABLE", False):  # W&B logging (optional)
                 try:
                     import wandb
                     cfg = {
@@ -177,13 +217,17 @@ class xAppDQNPRBAllocator(xAppBase):
         print(f"{self.xapp_id}: enabled (train={self.train_mode}, period={self.period_steps} steps)")
 
     def _epsilon(self):
-        # Linear decay
+        """Return current exploration epsilon based on linear decay schedule."""
         if self.eps_decay <= 0:
             return self.eps_end
         frac = min(1.0, self._t / float(self.eps_decay))
         return self.eps_start + (self.eps_end - self.eps_start) * frac
 
     def _get_slice_counts(self, cell):
+        """Count UEs per slice in a cell.
+
+        Returns a dict {slice_name: count} for the three slices.
+        """
         cnt = {SL_E: 0, SL_U: 0, SL_M: 0}
         for ue in cell.connected_ue_list.values():
             s = getattr(ue, "slice_type", None)
@@ -192,8 +236,12 @@ class xAppDQNPRBAllocator(xAppBase):
         return cnt
 
     def _get_state(self, cell):
+        """Build normalized state vector for a cell.
+
+        Normalization keeps inputs within roughly [0,1] to stabilize learning.
+        """
         cnt = self._get_slice_counts(cell)
-        prb_map = getattr(cell, "slice_dl_prb_quota", {}) or {}
+        prb_map = getattr(cell, "slice_dl_prb_quota", {}) or {}  # current PRB quotas per slice
         prb_m = float(prb_map.get(SL_M, 0))
         prb_u = float(prb_map.get(SL_U, 0))
         n_m = float(cnt.get(SL_M, 0))
@@ -211,7 +259,11 @@ class xAppDQNPRBAllocator(xAppBase):
         return s
 
     def _aggregate_slice_metrics(self, cell):
-        """Return per-slice aggregates used to compute rewards."""
+        """Return per-slice aggregates used to compute rewards.
+
+        eMBB/URLLC: sum served DL Mbps and DL buffer bytes over UEs in slice.
+        mMTC: sum requested PRBs and granted PRBs; include slice PRB quota.
+        """
         agg = {
             SL_E: {"tx_mbps": 0.0, "buf_bytes": 0.0},
             SL_U: {"tx_mbps": 0.0, "buf_bytes": 0.0},
@@ -238,7 +290,12 @@ class xAppDQNPRBAllocator(xAppBase):
         return agg
 
     def _slice_scores(self, cell, T_s):
-        """Compute per-slice scores in [0,1] based on current KPIs."""
+        """Compute per-slice scores in [0,1] based on current KPIs.
+
+        - eMBB: favor draining buffer over time window T_s.
+        - URLLC: linear score that drops with queueing delay (buffer / tx_rate).
+        - mMTC: utilization score; if idle, prefer fewer PRBs (1/slice_prb).
+        """
         kappa = 8.0  # bits per byte
         agg = self._aggregate_slice_metrics(cell)
         # eMBB: drain queue (scaled to [0,1])
@@ -270,10 +327,12 @@ class xAppDQNPRBAllocator(xAppBase):
         return embb_score, urllc_score, mmtc_score
 
     def _reward(self, cell, T_s):
+        """Combine slice scores using configured weights to a scalar reward."""
         e, u, m = self._slice_scores(cell, T_s)
         return float(self.w_e * e + self.w_u * u + self.w_m * m)
 
     def _act(self, state):
+        """Epsilon‑greedy action selection (random with prob ε; otherwise argmax Q)."""
         eps = self._epsilon() if self.train_mode else 0.0
         if random.random() < eps or not TORCH_AVAILABLE:
             return random.randrange(self._n_actions)
@@ -283,6 +342,10 @@ class xAppDQNPRBAllocator(xAppBase):
             return int(torch.argmax(q, dim=1).item())
 
     def _opt_step(self):
+        """One DQN optimization step over a replay mini‑batch.
+
+        Returns the scalar loss value (float) when training occurs; otherwise None.
+        """
         if not self.train_mode or not TORCH_AVAILABLE:
             return None
         if len(self._buf) < max(32, self.batch):
@@ -306,6 +369,7 @@ class xAppDQNPRBAllocator(xAppBase):
         return float(loss.item())
 
     def _apply_action(self, cell, action: int):
+        """Apply a discrete action as a PRB move between slice quotas for the cell."""
         # Map action to pair (src, dst)
         amap = {
             0: None,
@@ -328,6 +392,7 @@ class xAppDQNPRBAllocator(xAppBase):
         return False
 
     def _log(self, step_idx: int, cell_id: str, metrics: dict):
+        """Emit metrics to TensorBoard and/or Weights & Biases."""
         # TensorBoard scalars per cell
         if self._tb is not None:
             for k, v in metrics.items():
@@ -344,6 +409,14 @@ class xAppDQNPRBAllocator(xAppBase):
                 pass
 
     def step(self):
+        """Main loop: observe→(learn)→act at the configured decision period.
+
+        - Early return on non‑decision steps to reduce overhead.
+        - For each cell: compute new state s_t; if an (s_{t-1}, a_{t-1}) exists,
+          compute reward r_t and push a transition (s_{t-1}, a_{t-1}, r_t, s_t).
+        - Optionally optimize the network, then select and apply the next action.
+        - Log per‑cell metrics and a periodic action histogram.
+        """
         if not self.enabled:
             return
         sim_step = getattr(getattr(self.ric, "simulation_engine", None), "sim_step", 0)
@@ -401,6 +474,7 @@ class xAppDQNPRBAllocator(xAppBase):
                 pass
 
     def __del__(self):
+        """Best‑effort cleanup of telemetry handles at interpreter shutdown."""
         try:
             if self._tb is not None:
                 self._tb.flush(); self._tb.close()
@@ -413,6 +487,7 @@ class xAppDQNPRBAllocator(xAppBase):
             pass
 
     def to_json(self):
+        """Expose a compact JSON for UI/knowledge endpoints."""
         j = super().to_json()
         j.update({
             "train_mode": self.train_mode,
