@@ -13,6 +13,7 @@ try:
     import torch.optim as optim
     TORCH_AVAILABLE = True
 except Exception:
+    # Do not crash if torch is missing; xApp will disable itself.
     TORCH_AVAILABLE = False
 
 
@@ -21,42 +22,47 @@ SL_U = getattr(settings, "NETWORK_SLICE_URLLC_NAME", "URLLC")
 SL_M = getattr(settings, "NETWORK_SLICE_MTC_NAME", "mMTC")
 
 
-class _ReplayBuffer:
-    def __init__(self, capacity: int = 50000):
-        self.buf = deque(maxlen=int(capacity))
+if TORCH_AVAILABLE:
+    class _ReplayBuffer:
+        def __init__(self, capacity: int = 50000):
+            self.buf = deque(maxlen=int(capacity))
 
-    def push(self, s, a, r, ns, d):
-        self.buf.append((s, a, r, ns, d))
+        def push(self, s, a, r, ns, d):
+            self.buf.append((s, a, r, ns, d))
 
-    def sample(self, batch):
-        import numpy as np
+        def sample(self, batch):
+            import numpy as np
 
-        batch = min(batch, len(self.buf))
-        idx = np.random.choice(len(self.buf), batch, replace=False)
-        s, a, r, ns, d = zip(*[self.buf[i] for i in idx])
-        return (
-            torch.tensor(s, dtype=torch.float32),
-            torch.tensor(a, dtype=torch.long),
-            torch.tensor(r, dtype=torch.float32),
-            torch.tensor(ns, dtype=torch.float32),
-            torch.tensor(d, dtype=torch.float32),
-        )
+            batch = min(batch, len(self.buf))
+            idx = np.random.choice(len(self.buf), batch, replace=False)
+            s, a, r, ns, d = zip(*[self.buf[i] for i in idx])
+            return (
+                torch.tensor(s, dtype=torch.float32),
+                torch.tensor(a, dtype=torch.long),
+                torch.tensor(r, dtype=torch.float32),
+                torch.tensor(ns, dtype=torch.float32),
+                torch.tensor(d, dtype=torch.float32),
+            )
 
-    def __len__(self):
-        return len(self.buf)
+        def __len__(self):
+            return len(self.buf)
 
 
-class _DQN(nn.Module):
-    def __init__(self, in_dim: int, n_actions: int):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(in_dim, 64), nn.ReLU(),
-            nn.Linear(64, 64), nn.ReLU(),
-            nn.Linear(64, n_actions),
-        )
+    class _DQN(nn.Module):
+        def __init__(self, in_dim: int, n_actions: int):
+            super().__init__()
+            self.net = nn.Sequential(
+                nn.Linear(in_dim, 64), nn.ReLU(),
+                nn.Linear(64, 64), nn.ReLU(),
+                nn.Linear(64, n_actions),
+            )
 
-    def forward(self, x):
-        return self.net(x)
+        def forward(self, x):
+            return self.net(x)
+else:
+    # Placeholders to avoid NameError if referenced in disabled code paths
+    _ReplayBuffer = None
+    _DQN = None
 
 
 class xAppDQNPRBAllocator(xAppBase):
@@ -227,7 +233,7 @@ class xAppDQNPRBAllocator(xAppBase):
 
     def _act(self, state):
         eps = self._epsilon() if self.train_mode else 0.0
-        if random.random() < eps:
+        if random.random() < eps or not TORCH_AVAILABLE:
             return random.randrange(self._n_actions)
         with torch.no_grad():
             x = torch.tensor([state], dtype=torch.float32)
@@ -235,7 +241,7 @@ class xAppDQNPRBAllocator(xAppBase):
             return int(torch.argmax(q, dim=1).item())
 
     def _opt_step(self):
-        if not self.train_mode:
+        if not self.train_mode or not TORCH_AVAILABLE:
             return
         if len(self._buf) < max(32, self.batch):
             return
@@ -309,4 +315,3 @@ class xAppDQNPRBAllocator(xAppBase):
             "enabled": self.enabled,
         })
         return j
-

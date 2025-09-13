@@ -166,24 +166,44 @@ if args.strict_real_traffic:
 if args.trace_raw_map:
     raw_items = []
     for item in args.trace_raw_map:
-        # Format: IMSI:file.csv:UE_IP (UE_IP required)
+        # Supported formats:
+        #   IMSI:file.csv:UE_IP
+        #   ALL:file.csv:UE_IP  (apply to all UEs)
+        #   slice:<NAME>:file.csv:UE_IP  (apply to UEs of a slice)
         if not item or ":" not in item:
             continue
         parts = item.split(":")
         if len(parts) < 2:
             continue
-        imsi, path = parts[0].strip(), ":".join(parts[1:]).strip()
-        # Require ue_ip (last token). If >3 parts, assume middle colons belong to path
+        key = parts[0].strip()
+        # Extract path and ue_ip (last token is ue_ip; middle may contain colons)
         ue_ip = None
+        path = None
         if len(parts) >= 3:
             ue_ip = parts[-1].strip()
             path = ":".join(parts[1:-1]).strip()
-        # If ue_ip missing, skip with warning
-        if imsi and path:
-            if ue_ip:
-                raw_items.append({"imsi": imsi, "file": path, "ue_ip": ue_ip})
+        else:
+            path = parts[1].strip()
+        if not path:
+            continue
+        # Build mapping dict
+        entry = {"file": path, "ue_ip": ue_ip}
+        if key.upper() in ("ALL", "*"):
+            entry["imsi"] = "*"
+        elif key.lower().startswith("slice"):
+            # Accept slice:<NAME> or SLICE_NAME
+            sl = None
+            if key.lower().startswith("slice:"):
+                sl = key.split(":", 1)[1]
             else:
-                print(f"[main] Skipping --trace-raw-map '{item}': missing UE_IP")
+                sl = key.split("_", 1)[-1]
+            entry["slice"] = (sl or "").strip()
+        else:
+            entry["imsi"] = key
+        if ue_ip is None:
+            print(f"[main] Skipping --trace-raw-map '{item}': missing UE_IP")
+            continue
+        raw_items.append(entry)
     if raw_items:
         os.environ["TRACE_RAW_MAP_JSON"] = json.dumps(raw_items)
 if args.trace_bin is not None:

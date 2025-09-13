@@ -156,13 +156,32 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
            TRACE_SPEEDUP so the UE starts replaying on subsequent steps.
         """
         # Prefer raw packet mapping if present for this IMSI
-        raw_map = getattr(settings, "TRACE_RAW_MAP", []) or []  # list[{imsi,file,ue_ip}]
+        raw_map = getattr(settings, "TRACE_RAW_MAP", []) or []  # list of dicts
         raw_entry = None
-        # Find the first mapping that matches this UE's IMSI
+        # Resolution priority: exact IMSI > slice mapping > wildcard ALL
         for item in raw_map:
-            if isinstance(item, dict) and item.get("imsi") == ue.ue_imsi:
+            if not isinstance(item, dict):
+                continue
+            if item.get("imsi") == ue.ue_imsi:
                 raw_entry = item
                 break
+        if raw_entry is None:
+            # Try slice-based rule
+            for item in raw_map:
+                if not isinstance(item, dict):
+                    continue
+                sl = (item.get("slice") or "").strip()
+                if sl and sl == getattr(ue, "slice_type", None):
+                    raw_entry = item
+                    break
+        if raw_entry is None:
+            # Try wildcard rule
+            for item in raw_map:
+                if not isinstance(item, dict):
+                    continue
+                if (item.get("imsi") or "").upper() in ("*", "ALL"):
+                    raw_entry = item
+                    break
 
         if raw_entry:
             # Extract mapping fields and playback/aggregation settings

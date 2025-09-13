@@ -271,6 +271,79 @@ Notes:
 
 ---
 
+### Attach Traces to All UEs or by Slice (many UEs)
+
+When running with many UEs, you can attach traces without listing every IMSI individually:
+
+- Same trace for all UEs (wildcard):
+
+```bash
+python backend/main.py --preset simple --mode server \
+  --ue-max 30 --freeze-mobility \
+  --trace-raw-map ALL:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
+  --trace-bin 1.0 --trace-speedup 1.0 --strict-real-traffic --trace-loop
+```
+
+- Different traces per slice (applies to any number of UEs in each slice):
+
+```bash
+python backend/main.py --preset simple --mode server \
+  --ue-embb 10 --ue-urllc 10 --ue-mmtc 10 --freeze-mobility \
+  --trace-raw-map slice:eMBB:backend/assets/traces/eMBB.csv:172.30.1.1 \
+  --trace-raw-map slice:URLLC:backend/assets/traces/URLLC.csv:172.30.1.1 \
+  --trace-raw-map slice:mMTC:backend/assets/traces/mMTC.csv:172.30.1.1 \
+  --trace-bin 1.0 --trace-speedup 1.0 --strict-real-traffic --trace-loop
+```
+
+Semantics:
+- `IMSI_#:` maps a specific UE.
+- `ALL:` applies to any UE not matched by a specific mapping.
+- `slice:<NAME>:` applies to UEs registered on that slice (`eMBB`, `URLLC`, `mMTC`).
+  Priority: exact IMSI > slice mapping > ALL.
+
+Notes:
+- PRB allocation already covers all UEs in each cell; with the above, every UE will replay its trace and compete for PRBs.
+- Freezing mobility keeps radio stable so differences come from offered load and PRB allocation.
+
+### RL PRB Allocation + Traces (many UEs)
+
+You can combine the DQN PRB allocator xApp with the multi‑UE trace mapping above to learn PRB shifts under realistic traffic. Install PyTorch first:
+
+```bash
+pip install torch
+```
+
+- Per‑slice traces with RL (any number of UEs per slice):
+
+```bash
+python backend/main.py --preset simple --mode server \
+  --ue-embb 10 --ue-urllc 10 --ue-mmtc 10 --freeze-mobility \
+  --trace-raw-map slice:eMBB:backend/assets/traces/eMBB.csv:172.30.1.1 \
+  --trace-raw-map slice:URLLC:backend/assets/traces/URLLC.csv:172.30.1.1 \
+  --trace-raw-map slice:mMTC:backend/assets/traces/mMTC.csv:172.30.1.1 \
+  --trace-bin 1.0 --trace-speedup 1.0 --strict-real-traffic --trace-loop \
+  --dqn-prb --dqn-train --dqn-period 1 --dqn-move-step 1 \
+  --kpi-history --kpi-log
+```
+
+- Same trace for all UEs with RL:
+
+```bash
+python backend/main.py --preset simple --mode server \
+  --ue-max 30 --freeze-mobility \
+  --trace-raw-map ALL:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
+  --trace-bin 1.0 --trace-speedup 1.0 --strict-real-traffic --trace-loop \
+  --dqn-prb --dqn-train --dqn-period 1 --dqn-move-step 1 \
+  --kpi-history --kpi-log
+```
+
+Tips and knobs:
+- `--dqn-period N` acts every N sim steps (default 1). With the default 1 s step, `N=1` roughly corresponds to T=1 s; adjust if you want a different control period.
+- `--dqn-move-step K` moves K PRBs per action (Table 3 uses 1 RB).
+- A pre‑trained model can be pointed to with `--dqn-model backend/models/dqn_prb.pt` (this is also the default path); omit `--dqn-train` to run inference only.
+- Use the KPI dashboard with history (`--kpi-history --kpi-log`) to monitor slice PRBs, DL Mbps, buffers, and the effect of PRB moves.
+
+
 ## 📊 Live KPI Dashboard xApp
 
 Drop-in xApp that starts a Dash server at `http://localhost:8061` and streams per‑UE and per‑cell KPIs.
@@ -354,7 +427,7 @@ python backend/main.py --preset simple --mode server \
 Useful flags/env vars:
 - `--dqn-prb` (or `DQN_PRB_ENABLE=1`): enable the DQN xApp.
 - `--dqn-train` (or `DQN_PRB_TRAIN=1`): online training; otherwise runs greedy inference.
-- `--dqn-model <path>` (or `DQN_PRB_MODEL_PATH`): save/load model weights.
+- `--dqn-model <path>` (or `DQN_PRB_MODEL_PATH`): save/load model weights (default `backend/models/dqn_prb.pt`).
 - `--dqn-period <steps>` (`DQN_PRB_DECISION_PERIOD_STEPS`): act every N sim steps (default 1).
 - `--dqn-move-step <PRBs>` (`DQN_PRB_MOVE_STEP`): PRBs moved per action (default 1).
 - Exploration and learning hyper‑params can be set via env vars: `DQN_PRB_EPSILON_START`, `DQN_PRB_EPSILON_END`, `DQN_PRB_EPSILON_DECAY`, `DQN_PRB_LR`, `DQN_PRB_BATCH`, `DQN_PRB_BUFFER`, `DQN_PRB_GAMMA`.
