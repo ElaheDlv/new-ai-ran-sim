@@ -162,6 +162,13 @@ except Exception:
 # Model path
 DQN_PRB_MODEL_PATH = os.getenv("DQN_PRB_MODEL_PATH", "backend/models/dqn_prb.pt")
 
+# DQN logging/telemetry
+DQN_TB_ENABLE = os.getenv("DQN_TB_ENABLE", "0") in ("1", "true", "True")
+DQN_TB_DIR = os.getenv("DQN_TB_DIR", "backend/tb_logs")
+DQN_WANDB_ENABLE = os.getenv("DQN_WANDB_ENABLE", "0") in ("1", "true", "True")
+DQN_WANDB_PROJECT = os.getenv("DQN_WANDB_PROJECT", "ai-ran-dqn")
+DQN_WANDB_RUNNAME = os.getenv("DQN_WANDB_RUNNAME", "")
+
 
 RAN_TOPOLOGY_PRESET = os.getenv("RAN_TOPOLOGY_PRESET", "default")  # 'default' or 'simple'
 

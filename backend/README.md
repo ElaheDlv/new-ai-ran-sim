@@ -437,6 +437,31 @@ Notes:
 - Rewards use current KPIs and are a practical instantiation of the paper’s formulas; you can refine the shaping or weights in `settings/ran_config.py`.
 - If `torch` is unavailable, the xApp disables itself gracefully.
 
+#### DQN Training Telemetry (TensorBoard / W&B)
+
+You can visualize training with TensorBoard or Weights & Biases (optional):
+
+- TensorBoard (recommended locally):
+  - Install: `pip install tensorboard`
+  - Run with logging:
+    ```bash
+    python backend/main.py --preset simple --mode server \
+      --dqn-prb --dqn-train --dqn-log-tb --dqn-tb-dir backend/tb_logs \
+      --kpi-history
+    ```
+  - Launch TensorBoard: `tensorboard --logdir backend/tb_logs`
+  - You’ll see per‑cell reward, slice scores (eMBB/URLLC/mMTC), loss, epsilon, PRB quotas, and action histograms.
+
+- Weights & Biases (cloud):
+  - Install and login: `pip install wandb && wandb login`
+  - Run with logging:
+    ```bash
+    python backend/main.py --preset simple --mode server \
+      --dqn-prb --dqn-train --dqn-wandb \
+      --dqn-wandb-project ai-ran-dqn --dqn-wandb-name local-run-1
+    ```
+  - The same metrics are logged to your W&B project.
+
 ---
 
 ## 📝 License

@@ -55,6 +55,11 @@ parser.add_argument("--dqn-epsilon-end", type=float, help="Epsilon end for explo
 parser.add_argument("--dqn-epsilon-decay", type=int, help="Epsilon decay steps")
 parser.add_argument("--dqn-period", type=int, help="Decision period in sim steps")
 parser.add_argument("--dqn-move-step", type=int, help="PRBs moved per action")
+parser.add_argument("--dqn-log-tb", action="store_true", help="Enable TensorBoard logging for DQN")
+parser.add_argument("--dqn-tb-dir", type=str, help="TensorBoard log dir for DQN")
+parser.add_argument("--dqn-wandb", action="store_true", help="Enable Weights & Biases logging for DQN")
+parser.add_argument("--dqn-wandb-project", type=str, help="W&B project name")
+parser.add_argument("--dqn-wandb-name", type=str, help="W&B run name")
 # Trace replay options
 parser.add_argument(
     "--trace-speedup",
@@ -157,6 +162,16 @@ if args.dqn_period is not None:
     os.environ["DQN_PRB_DECISION_PERIOD_STEPS"] = str(args.dqn_period)
 if args.dqn_move_step is not None:
     os.environ["DQN_PRB_MOVE_STEP"] = str(args.dqn_move_step)
+if args.dqn_log_tb:
+    os.environ["DQN_TB_ENABLE"] = "1"
+if args.dqn_tb_dir:
+    os.environ["DQN_TB_DIR"] = args.dqn_tb_dir
+if args.dqn_wandb:
+    os.environ["DQN_WANDB_ENABLE"] = "1"
+if args.dqn_wandb_project:
+    os.environ["DQN_WANDB_PROJECT"] = args.dqn_wandb_project
+if args.dqn_wandb_name:
+    os.environ["DQN_WANDB_RUNNAME"] = args.dqn_wandb_name
 
 # Trace mapping and options (export via env before importing settings)
 if args.trace_speedup is not None:

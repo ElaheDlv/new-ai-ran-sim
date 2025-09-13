@@ -4,6 +4,7 @@ import os
 import math
 import random
 from collections import deque, defaultdict
+from datetime import datetime
 
 import settings
 
@@ -102,6 +103,8 @@ class xAppDQNPRBAllocator(xAppBase):
         # Internal state
         self._t = 0
         self._per_cell_prev = {}  # cell_id -> {state, action}
+        self._last_loss = None
+        self._action_counts = defaultdict(int)
 
         # NN
         self._n_actions = 7
@@ -111,6 +114,9 @@ class xAppDQNPRBAllocator(xAppBase):
             print(f"{self.xapp_id}: torch not available; disabling.")
             self.enabled = False
 
+        # Telemetry: TensorBoard / W&B
+        self._tb = None
+        self._wandb = None
         if self.enabled:
             os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
             self._q = _DQN(self._state_dim, self._n_actions).to(self._device)
@@ -126,6 +132,42 @@ class xAppDQNPRBAllocator(xAppBase):
                     print(f"{self.xapp_id}: loaded model from {self.model_path}")
             except Exception as e:
                 print(f"{self.xapp_id}: failed loading model: {e}")
+
+            # TensorBoard
+            if getattr(settings, "DQN_TB_ENABLE", False):
+                try:
+                    from torch.utils.tensorboard import SummaryWriter
+                    base = getattr(settings, "DQN_TB_DIR", "backend/tb_logs")
+                    run = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    logdir = os.path.join(base, f"dqn_prb_{run}")
+                    os.makedirs(logdir, exist_ok=True)
+                    self._tb = SummaryWriter(logdir=logdir)
+                    print(f"{self.xapp_id}: TensorBoard logging to {logdir}")
+                except Exception as e:
+                    print(f"{self.xapp_id}: TensorBoard unavailable: {e}")
+                    self._tb = None
+            # W&B
+            if getattr(settings, "DQN_WANDB_ENABLE", False):
+                try:
+                    import wandb
+                    cfg = {
+                        "gamma": self.gamma,
+                        "lr": self.lr,
+                        "batch": self.batch,
+                        "buffer": self.buffer_cap,
+                        "epsilon_start": self.eps_start,
+                        "epsilon_end": self.eps_end,
+                        "epsilon_decay": self.eps_decay,
+                        "period_steps": self.period_steps,
+                        "move_step": self.move_step,
+                    }
+                    proj = getattr(settings, "DQN_WANDB_PROJECT", "ai-ran-dqn")
+                    name = getattr(settings, "DQN_WANDB_RUNNAME", "") or None
+                    self._wandb = wandb.init(project=proj, name=name, config=cfg)
+                    print(f"{self.xapp_id}: W&B logging enabled (project={proj})")
+                except Exception as e:
+                    print(f"{self.xapp_id}: W&B unavailable: {e}")
+                    self._wandb = None
 
     # ---------------- xApp lifecycle ----------------
     def start(self):
@@ -242,9 +284,9 @@ class xAppDQNPRBAllocator(xAppBase):
 
     def _opt_step(self):
         if not self.train_mode or not TORCH_AVAILABLE:
-            return
+            return None
         if len(self._buf) < max(32, self.batch):
-            return
+            return None
         s, a, r, ns, d = self._buf.sample(self.batch)
         q = self._q(s).gather(1, a.view(-1, 1)).squeeze(1)
         with torch.no_grad():
@@ -261,6 +303,7 @@ class xAppDQNPRBAllocator(xAppBase):
                 torch.save(self._q.state_dict(), self.model_path)
             except Exception:
                 pass
+        return float(loss.item())
 
     def _apply_action(self, cell, action: int):
         # Map action to pair (src, dst)
@@ -278,8 +321,27 @@ class xAppDQNPRBAllocator(xAppBase):
             return False
         src, dst = mv
         if hasattr(cell, "adjust_slice_quota_move_rb"):
-            return cell.adjust_slice_quota_move_rb(src, dst, prb_step=self.move_step)
+            ok = cell.adjust_slice_quota_move_rb(src, dst, prb_step=self.move_step)
+            if ok:
+                self._action_counts[action] += 1
+            return ok
         return False
+
+    def _log(self, step_idx: int, cell_id: str, metrics: dict):
+        # TensorBoard scalars per cell
+        if self._tb is not None:
+            for k, v in metrics.items():
+                try:
+                    self._tb.add_scalar(f"cell/{cell_id}/{k}", float(v), step_idx)
+                except Exception:
+                    pass
+        # W&B
+        if self._wandb is not None:
+            try:
+                import wandb
+                self._wandb.log({f"cell/{cell_id}/{k}": v for k, v in metrics.items()}, step=step_idx)
+            except Exception:
+                pass
 
     def step(self):
         if not self.enabled:
@@ -299,12 +361,56 @@ class xAppDQNPRBAllocator(xAppBase):
             if prev is not None:
                 r = self._reward(cell, T_s)
                 self._buf.push(prev["state"], prev["action"], r, s_now, 0.0)
-                self._opt_step()
+                loss = self._opt_step()
+                if loss is not None:
+                    self._last_loss = loss
+                # Per-slice components for visibility
+                e, u, m = self._slice_scores(cell, T_s)
+                # Quotas snapshot
+                prb_map = getattr(cell, "slice_dl_prb_quota", {}) or {}
+                prb_e = float(prb_map.get(SL_E, 0))
+                prb_u = float(prb_map.get(SL_U, 0))
+                prb_m = float(prb_map.get(SL_M, 0))
+                # Emit logs
+                self._log(self._t, cell_id, {
+                    "reward": r,
+                    "embb_score": e,
+                    "urllc_score": u,
+                    "mmtc_score": m,
+                    "epsilon": self._epsilon() if self.train_mode else 0.0,
+                    "loss": self._last_loss if self._last_loss is not None else 0.0,
+                    "prb_eMBB": prb_e,
+                    "prb_URLLC": prb_u,
+                    "prb_mMTC": prb_m,
+                    "action_prev": int(prev["action"]),
+                })
 
             # Choose and apply new action for next period
             a = self._act(s_now)
             self._apply_action(cell, a)
             self._per_cell_prev[cell_id] = {"state": s_now, "action": a}
+
+        # Log action histogram occasionally
+        if self._tb is not None and self._t % 50 == 0:
+            try:
+                import numpy as np
+                import torch as _torch
+                counts = [self._action_counts.get(i, 0) for i in range(self._n_actions)]
+                self._tb.add_histogram("actions/hist", _torch.tensor(counts, dtype=_torch.float32), self._t)
+            except Exception:
+                pass
+
+    def __del__(self):
+        try:
+            if self._tb is not None:
+                self._tb.flush(); self._tb.close()
+        except Exception:
+            pass
+        try:
+            if self._wandb is not None:
+                self._wandb.finish()
+        except Exception:
+            pass
 
     def to_json(self):
         j = super().to_json()
