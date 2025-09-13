@@ -181,7 +181,8 @@ class xAppDQNPRBAllocator(xAppBase):
                     run = datetime.now().strftime("%Y%m%d_%H%M%S")
                     logdir = os.path.join(base, f"dqn_prb_{run}")
                     os.makedirs(logdir, exist_ok=True)
-                    self._tb = SummaryWriter(logdir=logdir)
+                    # SummaryWriter expects 'log_dir', not 'logdir'
+                    self._tb = SummaryWriter(log_dir=logdir)
                     print(f"{self.xapp_id}: TensorBoard logging to {logdir}")
                 except Exception as e:
                     print(f"{self.xapp_id}: TensorBoard unavailable: {e}")
