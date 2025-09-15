@@ -35,6 +35,7 @@ try:  # torch is optional; the xApp disables itself if not available
 except Exception:
     # Do not crash if torch is missing; xApp will disable itself.
     TORCH_AVAILABLE = False
+    print("xapp_dqn_prb_allocator: torch not available; xApp will disable itself.")
 
 
 # Short aliases for slice names (read from settings with fallbacks)

@@ -48,14 +48,34 @@ ROW_2COL = {"display": "grid", "gridTemplateColumns": "repeat(2, minmax(0, 1fr))
 ROW_1COL = {"display": "grid", "gridTemplateColumns": "1fr", "gap": "12px"}
 
 
-def tidy(fig, title, ytitle):
-    base_margin = dict(l=40, r=10, t=40, b=35)
-    base_legend = dict(orientation="h", y=-0.25, x=0)  # below when no slider
+def tidy(fig, title, ytitle, show_legend=True, overlay_legend=False):
+    """Apply common layout with optional legend overlay to save vertical space.
 
-    # If history slider is enabled, move legend to the top and add space for the slider
-    if RAN_KPI_HISTORY_ENABLE:
-        base_margin = dict(l=50, r=20, t=70, b=80)
-        base_legend = dict(orientation="h", x=0, y=1.02, xanchor="left", yanchor="bottom")
+    - When overlay_legend is True, place the legend inside the plotting area at
+      the top-left with semi‑transparent background so it does not shrink the plot.
+    - When False, place the legend above (if history slider enabled) or below.
+    """
+    base_margin = dict(l=40, r=10, t=40, b=35)
+    legend_layout = dict(orientation="h", y=-0.25, x=0)
+
+    if overlay_legend:
+        # Overlay legend inside the plot; keep compact font and background
+        legend_layout = dict(
+            orientation="h",
+            yanchor="top",
+            y=0.98,
+            x=0.01,
+            xanchor="left",
+            bgcolor="rgba(255,255,255,0.6)",
+            bordercolor="#ddd",
+            borderwidth=1,
+            font=dict(size=9),
+        )
+    else:
+        # Non-overlay legends reserve space in margins
+        if RAN_KPI_HISTORY_ENABLE:
+            base_margin = dict(l=50, r=20, t=70, b=80)
+            legend_layout = dict(orientation="h", x=0, y=1.02, xanchor="left", yanchor="bottom")
 
     fig.update_layout(
         title=title,
@@ -63,12 +83,11 @@ def tidy(fig, title, ytitle):
         yaxis_title=ytitle,
         height=320,
         margin=base_margin,
-        legend=base_legend,
+        legend=legend_layout,
+        showlegend=bool(show_legend),
         template="plotly_white",
-        # Preserve user zoom/pan across live updates
         uirevision="kpi-static",
     )
-    # Optional history range slider per chart
     if RAN_KPI_HISTORY_ENABLE:
         try:
             fig.update_xaxes(rangeslider=dict(visible=True, thickness=0.12))
@@ -126,6 +145,11 @@ class xAppLiveKPIDashboard(xAppBase):
         self._cell_log_fp = None
         self._ue_log_csv = None
         self._cell_log_csv = None
+
+        # View controls: legend and UE filtering
+        self._show_legend = True
+        self._overlay_legend = True  # overlay helps when many UEs
+        self._ue_filter = set()  # empty -> show all
 
     # ---------------- xApp lifecycle ----------------
     def start(self):
@@ -326,6 +350,37 @@ class xAppLiveKPIDashboard(xAppBase):
                     ],
                 ),
 
+                # Display options: legend and UE filter
+                html.Div(
+                    style={"display": "grid", "gridTemplateColumns": "2fr 1fr 1fr", "gap": "12px", "marginTop": "8px"},
+                    children=[
+                        dcc.Dropdown(
+                            id="ue-filter",
+                            options=(
+                                [{"label": "ALL UEs", "value": "*"}] + [
+                                    {"label": imsi, "value": imsi} for imsi in sorted(self.ue_list.keys())
+                                ]
+                            ),
+                            value=["*"],
+                            multi=True,
+                            placeholder="Filter UEs to display (default: ALL)",
+                        ),
+                        dcc.Checklist(
+                            id="legend-toggle",
+                            options=[{"label": "Show legend", "value": "show"}],
+                            value=["show"],
+                            style={"alignSelf": "center"},
+                        ),
+                        dcc.Checklist(
+                            id="legend-overlay",
+                            options=[{"label": "Overlay legend", "value": "overlay"}],
+                            value=["overlay"],
+                            style={"alignSelf": "center"},
+                        ),
+                    ],
+                ),
+                html.Div(id="view-controls-label", style={"marginTop": "4px", "fontSize": "12px", "color": "#666"}),
+
                 # Slice split controls (fractions per cell)
                 html.Div(
                     style={"display": "grid", "gridTemplateColumns": "1fr 1fr 1fr", "gap": "12px", "marginTop": "8px"},
@@ -423,6 +478,26 @@ class xAppLiveKPIDashboard(xAppBase):
                 for cell in self.cell_list.values():
                     setattr(cell, "prb_per_ue_cap", cap_to_apply)
                 return f"Current cap: {cap_to_apply if cap_to_apply is not None else 'unlimited'} PRBs/UE"
+
+        @app.callback(
+            Output("view-controls-label", "children"),
+            Input("ue-filter", "value"),
+            Input("legend-toggle", "value"),
+            Input("legend-overlay", "value"),
+            prevent_initial_call=True,
+        )
+        def _view_controls(ue_values, show_values, overlay_values):
+            with self._lock:
+                sels = set(ue_values or [])
+                # wildcard '*' means all
+                self._ue_filter = set() if ("*" in sels or not sels) else set(sels)
+                self._show_legend = (show_values is not None) and ("show" in show_values)
+                self._overlay_legend = (overlay_values is not None) and ("overlay" in overlay_values)
+            # Reuse this label to acknowledge controls changed
+            n = "ALL" if not self._ue_filter else f"{len(self._ue_filter)} selected"
+            mode = "overlay" if self._overlay_legend else "separate"
+            vis = "shown" if self._show_legend else "hidden"
+            return f"UE filter: {n}. Legend: {vis}, {mode}."
 
         @app.callback(
             Output("slice-share-label", "children"),
@@ -534,6 +609,9 @@ class xAppLiveKPIDashboard(xAppBase):
                     + list(self._ue_dl_prb.keys())
                     + list(getattr(self, "_ue_dl_prb_req", {}).keys())
                 ))
+                # Apply UE filter if set
+                if getattr(self, "_ue_filter", set()):
+                    ue_keys = [k for k in ue_keys if k in self._ue_filter]
 
                 cell_keys = list(set(
                     list(self._cell_dl_load.keys())
@@ -628,14 +706,14 @@ class xAppLiveKPIDashboard(xAppBase):
                         c = SLICE_COLORS.get(slice_map.get(imsi))
                         tr_buf.append(go.Scatter(x=tx[-len(ys):], y=ys, mode="lines", name=_label(imsi, "DL buffer (bytes)"), line=dict(color=c)))
 
-            fig_bitrate = tidy(go.Figure(data=tr_bitrate), "Per‑UE Downlink Bitrate (Mbps)", "Mbps")
-            fig_sinr = tidy(go.Figure(data=tr_sinr), "Per‑UE SINR", "SINR (dB)")
-            fig_cqi = tidy(go.Figure(data=tr_cqi), "Per‑UE CQI", "CQI")
-            fig_prb_granted = tidy(go.Figure(data=tr_prb_granted), "Per‑UE DL PRBs — GRANTED", "PRBs")
-            fig_prb_requested = tidy(go.Figure(data=tr_prb_requested), "Per‑UE DL PRBs — REQUESTED", "PRBs")
-            fig_cell = tidy(go.Figure(data=tr_cell), "Per‑Cell Load & PRBs", "Value / PRBs")
-            fig_buf = tidy(go.Figure(data=tr_buf), "Per‑UE DL Buffer (bytes)*", "Bytes")
-            fig_latency = tidy(go.Figure(data=tr_latency), "Per‑UE Downlink Latency", "Milliseconds")
+            fig_bitrate = tidy(go.Figure(data=tr_bitrate), "Per‑UE Downlink Bitrate (Mbps)", "Mbps", show_legend=self._show_legend, overlay_legend=self._overlay_legend)
+            fig_sinr = tidy(go.Figure(data=tr_sinr), "Per‑UE SINR", "SINR (dB)", show_legend=self._show_legend, overlay_legend=self._overlay_legend)
+            fig_cqi = tidy(go.Figure(data=tr_cqi), "Per‑UE CQI", "CQI", show_legend=self._show_legend, overlay_legend=self._overlay_legend)
+            fig_prb_granted = tidy(go.Figure(data=tr_prb_granted), "Per‑UE DL PRBs — GRANTED", "PRBs", show_legend=self._show_legend, overlay_legend=self._overlay_legend)
+            fig_prb_requested = tidy(go.Figure(data=tr_prb_requested), "Per‑UE DL PRBs — REQUESTED", "PRBs", show_legend=self._show_legend, overlay_legend=self._overlay_legend)
+            fig_cell = tidy(go.Figure(data=tr_cell), "Per‑Cell Load & PRBs", "Value / PRBs", show_legend=self._show_legend, overlay_legend=self._overlay_legend)
+            fig_buf = tidy(go.Figure(data=tr_buf), "Per‑UE DL Buffer (bytes)*", "Bytes", show_legend=self._show_legend, overlay_legend=self._overlay_legend)
+            fig_latency = tidy(go.Figure(data=tr_latency), "Per‑UE Downlink Latency", "Milliseconds", show_legend=self._show_legend, overlay_legend=self._overlay_legend)
             # UE→slice preview string (compact)
             ue_preview = ", ".join([f"{imsi}→{slice_map.get(imsi) or '?'}" for imsi in sorted(ue_keys)])
             ue_slice_children = html.Div([html.Strong("UE→Slice: "), html.Span(ue_preview)])
