@@ -187,7 +187,7 @@ class xAppLiveKPIDashboard(xAppBase):
 
             # ---- Per‑UE ----
             for imsi, ue in self.ue_list.items():
-                # DL bitrate (bps -> Mbps)
+                # DL bitrate is stored in bps on the UE; convert to Mbps for plotting
                 dl_bps = float(getattr(ue, "downlink_bitrate", 0.0) or 0.0)
                 self._ue_dl_mbps[imsi].append(dl_bps / 1e6)
 

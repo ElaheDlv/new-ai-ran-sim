@@ -293,29 +293,36 @@ class xAppDQNPRBAllocator(xAppBase):
     def _slice_scores(self, cell, T_s):
         """Compute per-slice scores in [0,1] based on current KPIs.
 
-        - eMBB: favor draining buffer over time window T_s.
-        - URLLC: linear score that drops with queueing delay (buffer / tx_rate).
-        - mMTC: utilization score; if idle, prefer fewer PRBs (1/slice_prb).
+        Implements the Tractor paper’s formulas more literally:
+        - eMBB: score = alpha * (beta + tx_bits - buf_bits), clipped to [0,1]
+        - URLLC: score = (1/gamma) * max(0, gamma - (buf_bits / tx_bps)) with
+                  the special case score=1 when both tx==0 and buf==0.
+        - mMTC: utilization ratio with idle penalty (1/slice_prb).
         """
         kappa = 8.0  # bits per byte
         agg = self._aggregate_slice_metrics(cell)
-        # eMBB: drain queue (scaled to [0,1])
-        # score_bits = beta + tx_brate*1e6*T - dl_buffer*8; map to [0,1] via sigmoid-like squash
-        tx_bits = max(0.0, agg[SL_E]["tx_mbps"]) * 1e6 * T_s
-        buf_bits = max(0.0, agg[SL_E]["buf_bytes"]) * kappa
-        embb_raw = tx_bits - buf_bits
-        # squash to [0,1] using tanh-like mapping with scale
-        scale_bits = 1e7  # tune
-        embb_score = 0.5 * (math.tanh(embb_raw / max(1.0, scale_bits)) + 1.0)
+        # eMBB: linear score with scaling + offset, then clipped to [0,1]
+        tx_bits = max(0.0, agg[SL_E]["tx_mbps"]) * 1e6 * T_s  # Mbps -> bps * T
+        buf_bits = max(0.0, agg[SL_E]["buf_bytes"]) * kappa   # bytes -> bits
+        alpha = float(getattr(settings, "DQN_EMBB_ALPHA", 1.0))
+        beta = float(getattr(settings, "DQN_EMBB_BETA", 0.0))
+        embb_score = alpha * (beta + tx_bits - buf_bits)
+        embb_score = max(0.0, min(1.0, float(embb_score)))
 
         # URLLC: queueing delay proxy
-        tx_mbps_u = max(0.0, agg[SL_U]["tx_mbps"])  # Mbps
+        tx_mbps_u = max(0.0, agg[SL_U]["tx_mbps"])    # Mbps
         buf_bytes_u = max(0.0, agg[SL_U]["buf_bytes"])  # bytes
-        if tx_mbps_u <= 1e-9 and buf_bytes_u <= 1.0:
+        if tx_mbps_u <= 0.0 and buf_bytes_u <= 0.0:
+            # Special case per paper: no RAN-induced delay
             urllc_score = 1.0
+        elif tx_mbps_u <= 0.0 and buf_bytes_u > 0.0:
+            # Non-zero queue and zero tx -> infinite delay -> score 0
+            urllc_score = 0.0
         else:
-            delay_s = (buf_bytes_u * kappa) / max(1e-6, tx_mbps_u * 1e6)
-            urllc_score = max(0.0, min(1.0, (self.urlc_gamma_s - min(self.urlc_gamma_s, delay_s)) / self.urlc_gamma_s))
+            delay_s = (buf_bytes_u * kappa) / (tx_mbps_u * 1e6)
+            gamma = max(1e-12, float(self.urlc_gamma_s))
+            urllc_score = (1.0 / gamma) * max(0.0, gamma - delay_s)
+            urllc_score = max(0.0, min(1.0, float(urllc_score)))
 
         # mMTC: utilization ratio / idle penalty
         prb_req = agg[SL_M]["prb_req"]

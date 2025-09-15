@@ -140,14 +140,14 @@ except Exception:
 try:
     DQN_PRB_EPSILON_START = float(os.getenv("DQN_PRB_EPSILON_START", "1.0"))
     DQN_PRB_EPSILON_END = float(os.getenv("DQN_PRB_EPSILON_END", "0.1"))
-    DQN_PRB_EPSILON_DECAY = int(os.getenv("DQN_PRB_EPSILON_DECAY", "10000"))
+    DQN_PRB_EPSILON_DECAY = int(os.getenv("DQN_PRB_EPSILON_DECAY", "50000"))
     DQN_PRB_GAMMA = float(os.getenv("DQN_PRB_GAMMA", "0.99"))
-    DQN_PRB_LR = float(os.getenv("DQN_PRB_LR", "1e-3"))
+    DQN_PRB_LR = float(os.getenv("DQN_PRB_LR", "1e-4"))
     DQN_PRB_BATCH = int(os.getenv("DQN_PRB_BATCH", "64"))
-    DQN_PRB_BUFFER = int(os.getenv("DQN_PRB_BUFFER", "50000"))
+    DQN_PRB_BUFFER = int(os.getenv("DQN_PRB_BUFFER", "100000"))
 except Exception:
-    DQN_PRB_EPSILON_START, DQN_PRB_EPSILON_END, DQN_PRB_EPSILON_DECAY = 1.0, 0.1, 10000
-    DQN_PRB_GAMMA, DQN_PRB_LR, DQN_PRB_BATCH, DQN_PRB_BUFFER = 0.99, 1e-3, 64, 50000
+    DQN_PRB_EPSILON_START, DQN_PRB_EPSILON_END, DQN_PRB_EPSILON_DECAY = 1.0, 0.1, 50000
+    DQN_PRB_GAMMA, DQN_PRB_LR, DQN_PRB_BATCH, DQN_PRB_BUFFER = 0.99, 1e-4, 64, 100000
 
 # Reward shaping weights and parameters
 try:
@@ -155,9 +155,13 @@ try:
     DQN_WEIGHT_URLLC = float(os.getenv("DQN_WEIGHT_URLLC", "0.34"))
     DQN_WEIGHT_MMTC = float(os.getenv("DQN_WEIGHT_MMTC", "0.33"))
     DQN_URLLC_GAMMA_S = float(os.getenv("DQN_URLLC_GAMMA_S", "0.01"))  # 10 ms
+    # eMBB score scaling per paper: score = alpha * (beta + tx_bits - buf_bits), then clipped to [0,1]
+    DQN_EMBB_ALPHA = float(os.getenv("DQN_EMBB_ALPHA", "1.0"))
+    DQN_EMBB_BETA = float(os.getenv("DQN_EMBB_BETA", "0.0"))
 except Exception:
     DQN_WEIGHT_EMBB, DQN_WEIGHT_URLLC, DQN_WEIGHT_MMTC = 0.33, 0.34, 0.33
     DQN_URLLC_GAMMA_S = 0.01
+    DQN_EMBB_ALPHA, DQN_EMBB_BETA = 1.0, 0.0
 
 # Model path
 DQN_PRB_MODEL_PATH = os.getenv("DQN_PRB_MODEL_PATH", "backend/models/dqn_prb.pt")
