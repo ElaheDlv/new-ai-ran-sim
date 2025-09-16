@@ -191,33 +191,49 @@ if args.trace_raw_map:
         if len(parts) < 2:
             continue
         key = parts[0].strip()
-        # Extract path and ue_ip (last token is ue_ip; middle may contain colons)
-        ue_ip = None
-        path = None
-        if len(parts) >= 3:
+        # Build mapping dict based on first token
+        entry = None
+        if key.upper() in ("ALL", "*"):
+            # ALL:file:UE_IP
+            if len(parts) < 3:
+                continue
             ue_ip = parts[-1].strip()
             path = ":".join(parts[1:-1]).strip()
-        else:
-            path = parts[1].strip()
-        if not path:
-            continue
-        # Build mapping dict
-        entry = {"file": path, "ue_ip": ue_ip}
-        if key.upper() in ("ALL", "*"):
-            entry["imsi"] = "*"
-        elif key.lower().startswith("slice"):
-            # Accept slice:<NAME> or SLICE_NAME
-            sl = None
-            if key.lower().startswith("slice:"):
-                sl = key.split(":", 1)[1]
+            if not (path and ue_ip):
+                continue
+            entry = {"imsi": "*", "file": path, "ue_ip": ue_ip}
+        elif key.lower() == "slice" or key.lower().startswith("slice:"):
+            # Two supported forms:
+            #  - slice:NAME:file:UE_IP (split as ['slice', 'NAME', 'file', 'UE_IP'])
+            #  - slice:NAME:file:UE_IP (split as ['slice:NAME', 'file', 'UE_IP'])
+            if key.lower() == "slice":
+                if len(parts) < 4:
+                    continue
+                slice_name = parts[1].strip()
+                ue_ip = parts[-1].strip()
+                path = ":".join(parts[2:-1]).strip()
             else:
-                sl = key.split("_", 1)[-1]
-            entry["slice"] = (sl or "").strip()
+                # key like 'slice:NAME'
+                slice_name = key.split(":", 1)[1].strip() if ":" in key else ""
+                if len(parts) < 3:
+                    continue
+                ue_ip = parts[-1].strip()
+                path = ":".join(parts[1:-1]).strip()
+            if not (slice_name and path and ue_ip):
+                continue
+            entry = {"slice": slice_name, "file": path, "ue_ip": ue_ip}
         else:
-            entry["imsi"] = key
-        if ue_ip is None:
-            print(f"[main] Skipping --trace-raw-map '{item}': missing UE_IP")
+            # IMSI:file:UE_IP
+            if len(parts) < 3:
+                continue
+            ue_ip = parts[-1].strip()
+            path = ":".join(parts[1:-1]).strip()
+            if not (path and ue_ip):
+                continue
+            entry = {"imsi": key, "file": path, "ue_ip": ue_ip}
+        if entry is None:
             continue
+        raw_items.append(entry)
         raw_items.append(entry)
     if raw_items:
         os.environ["TRACE_RAW_MAP_JSON"] = json.dumps(raw_items)

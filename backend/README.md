@@ -273,6 +273,8 @@ Notes:
 
 ### Attach Traces to All UEs or by Slice (many UEs)
 
+##### This part is still not working properly
+
 When running with many UEs, you can attach traces without listing every IMSI individually:
 
 - Same trace for all UEs (wildcard):

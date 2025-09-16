@@ -41,16 +41,27 @@ try:
             else:
                 continue
     elif isinstance(_raw, list):
-        # Normalize list entries
+        # Normalize list entries.
+        # Accept forms:
+        #   {imsi, file, ue_ip}
+        #   {slice, file, ue_ip}
+        #   {imsi:"*", file, ue_ip} for ALL UEs
         norm = []
         for item in _raw:
             if not isinstance(item, dict):
                 continue
-            imsi = item.get("imsi")
             file = item.get("file")
+            if not file:
+                continue
             ue_ip = item.get("ue_ip")
-            if imsi and file:
-                norm.append({"imsi": imsi, "file": file, "ue_ip": ue_ip})
+            imsi = item.get("imsi")
+            sl = item.get("slice")
+            entry = {"file": file, "ue_ip": ue_ip}
+            if imsi is not None:
+                entry["imsi"] = imsi
+            if sl:
+                entry["slice"] = sl
+            norm.append(entry)
         TRACE_RAW_MAP = norm
     else:
         TRACE_RAW_MAP = []
