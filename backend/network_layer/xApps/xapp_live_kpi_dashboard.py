@@ -147,8 +147,8 @@ class xAppLiveKPIDashboard(xAppBase):
         self._cell_log_csv = None
 
         # View controls: legend and UE filtering
-        self._show_legend = True
-        self._overlay_legend = True  # overlay helps when many UEs
+        self._show_legend = False  # default to no built-in legend
+        self._overlay_legend = False
         self._ue_filter = set()  # empty -> show all
 
     # ---------------- xApp lifecycle ----------------
@@ -350,36 +350,42 @@ class xAppLiveKPIDashboard(xAppBase):
                     ],
                 ),
 
-                # Display options: legend and UE filter
+                # Display options: external legend (scrollable) and toggles
                 html.Div(
-                    style={"display": "grid", "gridTemplateColumns": "2fr 1fr 1fr", "gap": "12px", "marginTop": "8px"},
+                    style={"display": "grid", "gridTemplateColumns": "1fr 1fr 1fr", "gap": "12px", "marginTop": "8px"},
                     children=[
-                        dcc.Dropdown(
-                            id="ue-filter",
-                            options=(
-                                [{"label": "ALL UEs", "value": "*"}] + [
-                                    {"label": imsi, "value": imsi} for imsi in sorted(self.ue_list.keys())
-                                ]
+                        html.Div([
+                            html.Label("UE Legend (scroll)", title="Toggle UEs to display in plots"),
+                            html.Div([
+                                dcc.Checklist(id="ue-list", options=[], value=[], labelStyle={"display": "block", "cursor": "pointer"}),
+                            ], style={"maxHeight": "160px", "overflowY": "auto", "border": "1px solid #ddd", "padding": "6px", "backgroundColor": "#fafafa"}),
+                            html.Div([
+                                html.Button("Select All", id="btn-ue-select-all", n_clicks=0, style={"marginRight": "6px"}),
+                                html.Button("Clear", id="btn-ue-clear", n_clicks=0),
+                            ], style={"marginTop": "6px"}),
+                        ]),
+                        html.Div([
+                            html.Label("Legend visibility"),
+                            dcc.Checklist(
+                                id="legend-toggle",
+                                options=[{"label": "Show built‑in legend", "value": "show"}],
+                                value=[],
                             ),
-                            value=["*"],
-                            multi=True,
-                            placeholder="Filter UEs to display (default: ALL)",
-                        ),
-                        dcc.Checklist(
-                            id="legend-toggle",
-                            options=[{"label": "Show legend", "value": "show"}],
-                            value=["show"],
-                            style={"alignSelf": "center"},
-                        ),
-                        dcc.Checklist(
-                            id="legend-overlay",
-                            options=[{"label": "Overlay legend", "value": "overlay"}],
-                            value=["overlay"],
-                            style={"alignSelf": "center"},
-                        ),
+                        ]),
+                        html.Div([
+                            html.Label("Legend placement"),
+                            dcc.Checklist(
+                                id="legend-overlay",
+                                options=[{"label": "Overlay legend inside plot", "value": "overlay"}],
+                                value=[],
+                            ),
+                        ]),
                     ],
                 ),
                 html.Div(id="view-controls-label", style={"marginTop": "4px", "fontSize": "12px", "color": "#666"}),
+
+                # Live per-cell PRB quotas (updated each tick)
+                html.Div(id="cell-quota-live", style={"marginTop": "6px", "fontSize": "12px", "color": "#333"}),
 
                 # Slice split controls (fractions per cell)
                 html.Div(
@@ -481,16 +487,14 @@ class xAppLiveKPIDashboard(xAppBase):
 
         @app.callback(
             Output("view-controls-label", "children"),
-            Input("ue-filter", "value"),
+            Input("ue-list", "value"),
             Input("legend-toggle", "value"),
             Input("legend-overlay", "value"),
-            prevent_initial_call=True,
         )
         def _view_controls(ue_values, show_values, overlay_values):
             with self._lock:
                 sels = set(ue_values or [])
-                # wildcard '*' means all
-                self._ue_filter = set() if ("*" in sels or not sels) else set(sels)
+                self._ue_filter = set() if not sels else set(sels)
                 self._show_legend = (show_values is not None) and ("show" in show_values)
                 self._overlay_legend = (overlay_values is not None) and ("overlay" in overlay_values)
             # Reuse this label to acknowledge controls changed
@@ -591,7 +595,9 @@ class xAppLiveKPIDashboard(xAppBase):
             Output("cell-load", "figure"),
             Output("ue-buffer", "figure"),
             Output("ue-slice-list", "children"),
+            Output("cell-quota-live", "children"),
             Output("ue-dl-latency", "figure"),
+            Output("ue-list", "options"),
             Input("tick", "n_intervals"),
         )
         def _update(_n):
@@ -599,7 +605,7 @@ class xAppLiveKPIDashboard(xAppBase):
                 tx = list(self._t)
                 if not tx:
                     empty = go.Figure()
-                    return empty, empty, empty, empty, empty, empty, empty, ""
+                    return empty, empty, empty, empty, empty, empty, empty, "", "", empty, []
 
                 ue_keys = list(set(
                     list(self._ue_dl_mbps.keys())
@@ -714,11 +720,59 @@ class xAppLiveKPIDashboard(xAppBase):
             fig_cell = tidy(go.Figure(data=tr_cell), "Per‑Cell Load & PRBs", "Value / PRBs", show_legend=self._show_legend, overlay_legend=self._overlay_legend)
             fig_buf = tidy(go.Figure(data=tr_buf), "Per‑UE DL Buffer (bytes)*", "Bytes", show_legend=self._show_legend, overlay_legend=self._overlay_legend)
             fig_latency = tidy(go.Figure(data=tr_latency), "Per‑UE Downlink Latency", "Milliseconds", show_legend=self._show_legend, overlay_legend=self._overlay_legend)
+
+            # Live per-cell quotas and last RL action (if present)
+            quota_lines = []
+            for cid, cell in self.cell_list.items():
+                q = getattr(cell, "slice_dl_prb_quota", {}) or {}
+                e = int(q.get("eMBB", 0) or 0)
+                u = int(q.get("URLLC", 0) or 0)
+                m = int(q.get("mMTC", 0) or 0)
+                maxp = int(getattr(cell, "max_dl_prb", 0) or 0)
+                act = getattr(cell, "rl_last_action", None)
+                if isinstance(act, dict):
+                    a_lbl = act.get("label", "keep")
+                    a_mv = act.get("moved", 0)
+                    a_step = act.get("step", "-")
+                    who = act.get("actor", "?")
+                    extra = f" | last {who}: {a_lbl} (+{a_mv}) at step {a_step}"
+                else:
+                    extra = ""
+                quota_lines.append(f"{cid}: eMBB={e}, URLLC={u}, mMTC={m} (max {maxp}){extra}")
+            quota_text = "\n".join(quota_lines)
             # UE→slice preview string (compact)
             ue_preview = ", ".join([f"{imsi}→{slice_map.get(imsi) or '?'}" for imsi in sorted(ue_keys)])
             ue_slice_children = html.Div([html.Strong("UE→Slice: "), html.Span(ue_preview)])
 
-            return fig_bitrate, fig_sinr, fig_cqi, fig_prb_granted, fig_prb_requested, fig_cell, fig_buf, ue_slice_children ,fig_latency
+            # Build UE options for the external legend from ALL known UEs (not only those with recent samples)
+            all_imsi = sorted(self.ue_list.keys())
+            ue_options = [
+                {"label": f"{imsi} ({getattr(self.ue_list.get(imsi), 'slice_type', None) or '?'} )", "value": imsi}
+                for imsi in all_imsi
+            ]
+
+            return fig_bitrate, fig_sinr, fig_cqi, fig_prb_granted, fig_prb_requested, fig_cell, fig_buf, ue_slice_children, quota_text, fig_latency, ue_options
+
+        @app.callback(
+            Output("ue-list", "value"),
+            Input("ue-list", "options"),
+            Input("btn-ue-select-all", "n_clicks"),
+            Input("btn-ue-clear", "n_clicks"),
+            State("ue-list", "value"),
+        )
+        def _sync_ue_list(options, n_all, n_clear, cur):
+            # Determine which trigger fired
+            ctx = dash.callback_context
+            trig = ctx.triggered[0]["prop_id"].split(".")[0] if ctx and ctx.triggered else None
+            all_vals = [opt["value"] for opt in (options or [])]
+            if trig == "btn-ue-select-all":
+                return all_vals
+            if trig == "btn-ue-clear":
+                return []
+            # Initialize selection to ALL when options change and current empty/None
+            if (not cur) and options:
+                return all_vals
+            return dash.no_update
 
         def _run():
             app.run_server(host="127.0.0.1", port=DASH_PORT, debug=False)

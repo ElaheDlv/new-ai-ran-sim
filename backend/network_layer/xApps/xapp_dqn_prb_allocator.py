@@ -390,13 +390,42 @@ class xAppDQNPRBAllocator(xAppBase):
             6: (SL_E, SL_U),
         }
         mv = amap.get(action)
+        sim_step = getattr(getattr(self.ric, "simulation_engine", None), "sim_step", None)
         if mv is None:
+            # Record a keep action for visibility
+            try:
+                setattr(cell, "rl_last_action", {
+                    "actor": "DQN",
+                    "code": int(action),
+                    "label": "keep",
+                    "moved": 0,
+                    "src": None,
+                    "dst": None,
+                    "step": int(sim_step) if sim_step is not None else None,
+                    "quota": dict(getattr(cell, "slice_dl_prb_quota", {}) or {}),
+                })
+            except Exception:
+                pass
             return False
         src, dst = mv
         if hasattr(cell, "adjust_slice_quota_move_rb"):
             ok = cell.adjust_slice_quota_move_rb(src, dst, prb_step=self.move_step)
             if ok:
                 self._action_counts[action] += 1
+                # Record action on the cell for live dashboards
+                try:
+                    setattr(cell, "rl_last_action", {
+                        "actor": "DQN",
+                        "code": int(action),
+                        "label": f"{src}→{dst}",
+                        "moved": int(self.move_step),
+                        "src": src,
+                        "dst": dst,
+                        "step": int(sim_step) if sim_step is not None else None,
+                        "quota": dict(getattr(cell, "slice_dl_prb_quota", {}) or {}),
+                    })
+                except Exception:
+                    pass
             return ok
         return False
 
