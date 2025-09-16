@@ -289,9 +289,9 @@ python backend/main.py --preset simple --mode server \
 ```bash
 python backend/main.py --preset simple --mode server \
   --ue-embb 10 --ue-urllc 10 --ue-mmtc 10 --freeze-mobility \
-  --trace-raw-map slice:eMBB:backend/assets/traces/eMBB.csv:172.30.1.1 \
-  --trace-raw-map slice:URLLC:backend/assets/traces/URLLC.csv:172.30.1.1 \
-  --trace-raw-map slice:mMTC:backend/assets/traces/mMTC.csv:172.30.1.1 \
+  --trace-raw-map slice:eMBB:backend/assets/traces/eMBB_aligned.csv:172.30.1.1 \
+  --trace-raw-map slice:URLLC:backend/assets/traces/URLLC_aligned.csv:172.30.1.1 \
+  --trace-raw-map slice:mMTC:backend/assets/traces/mMTC_aligned.csv:172.30.1.1 \
   --trace-bin 1.0 --trace-speedup 1.0 --strict-real-traffic --trace-loop
 ```
 
@@ -318,9 +318,9 @@ pip install torch
 ```bash
 python backend/main.py --preset simple --mode server \
   --ue-embb 10 --ue-urllc 10 --ue-mmtc 10 --freeze-mobility \
-  --trace-raw-map slice:eMBB:backend/assets/traces/eMBB.csv:172.30.1.1 \
-  --trace-raw-map slice:URLLC:backend/assets/traces/URLLC.csv:172.30.1.1 \
-  --trace-raw-map slice:mMTC:backend/assets/traces/mMTC.csv:172.30.1.1 \
+  --trace-raw-map slice:eMBB:backend/assets/traces/eMBB_aligned.csv:172.30.1.1 \
+  --trace-raw-map slice:URLLC:backend/assets/traces/URLLC_aligned.csv:172.30.1.1 \
+  --trace-raw-map slice:mMTC:backend/assets/traces/mMTC_aligned.csv:172.30.1.1 \
   --trace-bin 1.0 --trace-speedup 1.0 --strict-real-traffic --trace-loop \
   --dqn-prb --dqn-train --dqn-period 1 --dqn-move-step 1 \
   --kpi-history --kpi-log
@@ -462,6 +462,10 @@ You can visualize training with TensorBoard or Weights & Biases (optional):
     ```
   - The same metrics are logged to your W&B project.
 
+- Sample code run in tensorboard:
+```
+    python backend/main.py --preset simple --mode server   --ue-embb 10 --ue-urllc 10 --ue-mmtc 10 --freeze-mobility   --trace-raw-map slice:eMBB:backend/assets/traces/eMBB_aligned.csv:172.30.1.1   --trace-raw-map slice:URLLC:backend/assets/traces/URLLC_aligned.csv:172.30.1.1   --trace-raw-map slice:mMTC:backend/assets/traces/mMTC_aligned.csv:172.30.1.1   --trace-bin 1.0 --trace-speedup 1.0 --strict-real-traffic --trace-loop   --dqn-prb --dqn-train --dqn-period 1 --dqn-move-step 1   --kpi-history --kpi-log --dqn-log-tb --dqn-tb-dir backend/tb_logs
+```
 ---
 
 ## 📝 License

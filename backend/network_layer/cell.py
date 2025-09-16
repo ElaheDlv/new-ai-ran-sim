@@ -351,19 +351,14 @@ class Cell:
                         )
                 except Exception:
                     pass
-                # Strict mode: only show served traffic
-                if getattr(settings, "STRICT_REAL_TRAFFIC", False):
-                    ue.set_downlink_bitrate(served_bps)
-                else:
-                    # If buffer had data, show served; otherwise show capacity
-                    if take > 0:
-                        ue.set_downlink_bitrate(served_bps)
-                    else:
-                        ue.set_downlink_bitrate(cap_bps)
+                # Always show actual served traffic derived from the trace/buffer.
+                # If no bytes were available to send this step, served_bps=0 and we
+                # display 0 — never show radio capacity as a stand‑in.
+                ue.set_downlink_bitrate(served_bps)
             else:
-                # No trace: show capacity
-                ue.served_downlink_bitrate = cap_bps
-                ue.set_downlink_bitrate(cap_bps)
+                # No trace attached for this UE: do not fabricate throughput.
+                ue.served_downlink_bitrate = 0.0
+                ue.set_downlink_bitrate(0.0)
             # TODO: downlink and uplink latency
             # After serving downlink data (after buffer update)
             if getattr(ue, "_trace_samples", None) is not None:

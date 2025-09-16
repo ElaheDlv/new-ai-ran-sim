@@ -124,7 +124,6 @@ def load_raw_packet_csv(
       - Each packet contributes (length - overhead_sub_bytes) bytes.
       - Direction is classified by `ue_ip`:
           DL if Destination == ue_ip; UL if Source == ue_ip.
-        If `ue_ip` is None, it is detected heuristically from endpoint counts.
       - Time is normalized to start at 0 using the first observed timestamp.
       - Packets are grouped into bins of width `bin_s` seconds using
         floor((t - t0)/bin_s) * bin_s; the output is a list of
