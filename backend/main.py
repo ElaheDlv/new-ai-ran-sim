@@ -24,6 +24,7 @@ parser.add_argument(
     "--mode", choices=["server", "headless"], default="server", help="Run as WebSocket server or headless loop",
 )
 parser.add_argument("--steps", type=int, default=120, help="Headless: number of steps to run")
+parser.add_argument("--sim-step", type=float, help="Simulation step duration in seconds (default 1.0)")
 # KPI dashboard controls
 parser.add_argument(
     "--kpi-max-points",
@@ -134,6 +135,8 @@ if args.ue_mmtc is not None:
     os.environ["UE_SIMPLE_COUNT_MMTC"] = str(args.ue_mmtc)
 if args.freeze_mobility:
     os.environ["SIM_FREEZE_MOBILITY"] = "1"
+if args.sim_step is not None:
+    os.environ["SIM_STEP_TIME_DEFAULT"] = str(args.sim_step)
 
 # KPI dashboard env exports
 if args.kpi_max_points is not None:

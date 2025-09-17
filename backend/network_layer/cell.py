@@ -327,7 +327,7 @@ class Cell:
             # Save achievable capacity (bps)
             ue.achievable_downlink_bitrate = cap_bps
             # If a trace is attached, serve from buffer up to capacity
-            served_bps = cap_bps
+            #served_bps = cap_bps  ##  This might make an issue if there is no trace
             dt = getattr(settings, "SIM_STEP_TIME_DEFAULT", 1) or 1
             if getattr(ue, "_trace_samples", None) is not None:
                 # How many bytes can we serve this step given capacity?

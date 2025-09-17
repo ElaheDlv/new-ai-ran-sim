@@ -2,7 +2,10 @@
 # Simulation Configuration
 # ---------------------------
 import os
-SIM_STEP_TIME_DEFAULT = 1
+try:
+    SIM_STEP_TIME_DEFAULT = float(os.getenv("SIM_STEP_TIME_DEFAULT", "1.0"))
+except Exception:
+    SIM_STEP_TIME_DEFAULT = 1.0
 SIM_HANDOVER_HISTORY_LENGTH = 3
 SIM_MAX_STEP = 20000
 SIM_SPAWN_UE_AFTER_LOAD_HISTORY_STABLIZED = True

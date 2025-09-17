@@ -18,6 +18,7 @@ from settings import (
     RAN_KPI_LOG_DIR,
     RAN_KPI_HISTORY_ENABLE,
 )
+import settings
 
 import os
 import csv
@@ -48,7 +49,7 @@ ROW_2COL = {"display": "grid", "gridTemplateColumns": "repeat(2, minmax(0, 1fr))
 ROW_1COL = {"display": "grid", "gridTemplateColumns": "1fr", "gap": "12px"}
 
 
-def tidy(fig, title, ytitle, show_legend=True, overlay_legend=False):
+def tidy(fig, title, ytitle, show_legend=True, overlay_legend=False, x_title="Trace time (s)"):
     """Apply common layout with optional legend overlay to save vertical space.
 
     - When overlay_legend is True, place the legend inside the plotting area at
@@ -79,7 +80,7 @@ def tidy(fig, title, ytitle, show_legend=True, overlay_legend=False):
 
     fig.update_layout(
         title=title,
-        xaxis_title="Sim step",
+        xaxis_title=x_title,
         yaxis_title=ytitle,
         height=320,
         margin=base_margin,
@@ -625,6 +626,11 @@ class xAppLiveKPIDashboard(xAppBase):
                     + list(self._cell_max_prb.keys())
                 ))
 
+                # Build time axis in seconds (trace replay clock): step * dt * speedup
+                dt = float(getattr(settings, "SIM_STEP_TIME_DEFAULT", 1.0) or 1.0)
+                speed = float(getattr(settings, "TRACE_SPEEDUP", 1.0) or 1.0)
+                tx_s = [t * dt * speed for t in tx]
+
                 # Label helper and color selection by slice
                 slice_map = {}
                 try:
@@ -644,7 +650,7 @@ class xAppLiveKPIDashboard(xAppBase):
                     ys = list(self._ue_dl_mbps.get(imsi, []))
                     if ys:
                         c = SLICE_COLORS.get(slice_map.get(imsi))
-                        tr_bitrate.append(go.Scatter(x=tx[-len(ys):], y=ys, mode="lines", name=_label(imsi, "DL Mbps"), line=dict(color=c)))
+                        tr_bitrate.append(go.Scatter(x=tx_s[-len(ys):], y=ys, mode="lines", name=_label(imsi, "DL Mbps"), line=dict(color=c)))
 
                 # --- UE SINR ---
                 tr_sinr = []
@@ -652,7 +658,7 @@ class xAppLiveKPIDashboard(xAppBase):
                     ys_s = list(self._ue_sinr_db.get(imsi, []))
                     if ys_s:
                         c = SLICE_COLORS.get(slice_map.get(imsi))
-                        tr_sinr.append(go.Scatter(x=tx[-len(ys_s):], y=ys_s, mode="lines", name=_label(imsi, "SINR (dB)"), line=dict(color=c)))
+                        tr_sinr.append(go.Scatter(x=tx_s[-len(ys_s):], y=ys_s, mode="lines", name=_label(imsi, "SINR (dB)"), line=dict(color=c)))
 
                 # --- UE CQI ---
                 tr_cqi = []
@@ -660,7 +666,7 @@ class xAppLiveKPIDashboard(xAppBase):
                     ys_c = list(self._ue_cqi.get(imsi, []))
                     if ys_c:
                         c = SLICE_COLORS.get(slice_map.get(imsi))
-                        tr_cqi.append(go.Scatter(x=tx[-len(ys_c):], y=ys_c, mode="lines", name=_label(imsi, "CQI"), line=dict(color=c)))
+                        tr_cqi.append(go.Scatter(x=tx_s[-len(ys_c):], y=ys_c, mode="lines", name=_label(imsi, "CQI"), line=dict(color=c)))
 
                 # --- UE DL PRBs: GRANTED ---
                 tr_prb_granted = []
@@ -668,7 +674,7 @@ class xAppLiveKPIDashboard(xAppBase):
                     ys_g = list(self._ue_dl_prb.get(imsi, []))
                     if ys_g:
                         c = SLICE_COLORS.get(slice_map.get(imsi))
-                        tr_prb_granted.append(go.Scatter(x=tx[-len(ys_g):], y=ys_g, mode="lines", name=_label(imsi, "granted"), line=dict(color=c)))
+                        tr_prb_granted.append(go.Scatter(x=tx_s[-len(ys_g):], y=ys_g, mode="lines", name=_label(imsi, "granted"), line=dict(color=c)))
 
                 # --- UE DL PRBs: REQUESTED ---
                 tr_prb_requested = []
@@ -676,7 +682,7 @@ class xAppLiveKPIDashboard(xAppBase):
                     ys_r = list(getattr(self, "_ue_dl_prb_req", {}).get(imsi, []))
                     if ys_r:
                         c = SLICE_COLORS.get(slice_map.get(imsi))
-                        tr_prb_requested.append(go.Scatter(x=tx[-len(ys_r):], y=ys_r, mode="lines", name=_label(imsi, "requested"), line=dict(color=c)))
+                        tr_prb_requested.append(go.Scatter(x=tx_s[-len(ys_r):], y=ys_r, mode="lines", name=_label(imsi, "requested"), line=dict(color=c)))
 
 
 
@@ -687,7 +693,7 @@ class xAppLiveKPIDashboard(xAppBase):
                         # Convert seconds to milliseconds for plotting
                         ys_ms = [v * 1000.0 for v in ys]
                         c = SLICE_COLORS.get(slice_map.get(imsi))
-                        tr_latency.append(go.Scatter(x=tx[-len(ys_ms):], y=ys_ms, mode="lines", name=_label(imsi, "DL latency (ms)"), line=dict(color=c)))
+                        tr_latency.append(go.Scatter(x=tx_s[-len(ys_ms):], y=ys_ms, mode="lines", name=_label(imsi, "DL latency (ms)"), line=dict(color=c)))
                 
                
                 # --- Cell load & PRBs ---
@@ -695,14 +701,14 @@ class xAppLiveKPIDashboard(xAppBase):
                 for cid in cell_keys:
                     ys = list(self._cell_dl_load.get(cid, []))
                     if ys:
-                        tr_cell.append(go.Scatter(x=tx[-len(ys):], y=ys, mode="lines", name=f"{cid} DL load"))
+                        tr_cell.append(go.Scatter(x=tx_s[-len(ys):], y=ys, mode="lines", name=f"{cid} DL load"))
                 for cid in cell_keys:
                     ys_a = list(self._cell_alloc_prb.get(cid, []))
                     if ys_a:
-                        tr_cell.append(go.Scatter(x=tx[-len(ys_a):], y=ys_a, mode="lines", name=f"{cid} alloc PRB", line={"dash": "dot"}))
+                        tr_cell.append(go.Scatter(x=tx_s[-len(ys_a):], y=ys_a, mode="lines", name=f"{cid} alloc PRB", line={"dash": "dot"}))
                     ys_m = list(self._cell_max_prb.get(cid, []))
                     if ys_m:
-                        tr_cell.append(go.Scatter(x=tx[-len(ys_m):], y=ys_m, mode="lines", name=f"{cid} max PRB", line={"dash": "dash"}))
+                        tr_cell.append(go.Scatter(x=tx_s[-len(ys_m):], y=ys_m, mode="lines", name=f"{cid} max PRB", line={"dash": "dash"}))
 
                 # --- UE DL buffer (optional) ---
                 tr_buf = []
@@ -710,7 +716,7 @@ class xAppLiveKPIDashboard(xAppBase):
                     ys = list(self._ue_dl_buf.get(imsi, []))
                     if ys:
                         c = SLICE_COLORS.get(slice_map.get(imsi))
-                        tr_buf.append(go.Scatter(x=tx[-len(ys):], y=ys, mode="lines", name=_label(imsi, "DL buffer (bytes)"), line=dict(color=c)))
+                        tr_buf.append(go.Scatter(x=tx_s[-len(ys):], y=ys, mode="lines", name=_label(imsi, "DL buffer (bytes)"), line=dict(color=c)))
 
             fig_bitrate = tidy(go.Figure(data=tr_bitrate), "Per‑UE Downlink Bitrate (Mbps)", "Mbps", show_legend=self._show_legend, overlay_legend=self._overlay_legend)
             fig_sinr = tidy(go.Figure(data=tr_sinr), "Per‑UE SINR", "SINR (dB)", show_legend=self._show_legend, overlay_legend=self._overlay_legend)
