@@ -350,7 +350,7 @@ class xAppDQNPRBAllocator(xAppBase):
             q = self._q(x)
             return int(torch.argmax(q, dim=1).item())
 
-    def _opt_step(self):
+    def _opt_step(self):  #### OPTIMIZATION STEP is so simple as of now we might need to add more features
         """One DQN optimization step over a replay mini‑batch.
 
         Returns the scalar loss value (float) when training occurs; otherwise None.
