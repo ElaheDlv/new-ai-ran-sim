@@ -138,19 +138,24 @@ Tip: You usually don’t need to freeze radio; freezing mobility is sufficient i
 
 ## 📈 Replay Raw CSV Traces (per‑UE offered load)
 
-Attach a raw packet CSV to any spawned UE so its offered DL traffic is replayed and served subject to radio capacity and PRB allocation.
+Attach a raw packet CSV so its offered traffic is replayed and served subject to radio capacity and PRB allocation.
+
+Downlink replay and buffering happen at the gNB (Base Station): the BS owns a per‑UE DL queue (bytes) and a per‑UE DL trace replayer (samples, clock, idx). Each simulation step, the BS advances replay clocks and enqueues due DL bytes; cells then serve from the BS queue up to capacity. The UE’s `dl_buffer_bytes` is updated as a mirror for the UI (it reflects the gNB queue).
 
 - CLI flags:
   - `--trace-speedup <x>` (scale time; default 1.0)
   - `--strict-real-traffic` (show only served traffic; no fallback capacity)
   - `--trace-raw-map IMSI_#:path/to/raw.csv:UE_IP` (Wireshark/PCAP CSV; UE_IP required to classify DL/UL)
+    You can also attach by slice or ALL UEs:
+    - `--trace-raw-map slice:eMBB:path/to/embb.csv:UE_IP`
+    - `--trace-raw-map ALL:path/to/trace.csv:UE_IP`
   - `--trace-bin <seconds>` (aggregation bin for raw CSV; default 1.0)
   - `--trace-overhead-bytes <n>` (subtract per-packet bytes in raw CSV; default 0)
   - `--trace-loop` (replay traces continuously)
 
 Key trace flags (what they do):
 
-- `--trace-speedup <x>`: scales the replay clock. 1.0 = real time. 2.0 replays twice as fast (the same traced seconds happen in half the wall-clock time); 0.5 replays at half speed. Affects when samples are enqueued into UE buffers; serving still happens per simulation step.
+- `--trace-speedup <x>`: scales the replay clock. 1.0 = real time. 2.0 replays twice as fast (the same traced seconds happen in half the wall-clock time); 0.5 replays at half speed. Affects when DL samples are enqueued into the gNB DL queue; serving still happens per simulation step.
 - `--trace-bin <seconds>`: aggregation window for raw packet CSVs. Packets are grouped by `floor((t - t0)/bin)*bin` and summed to produce `(t, dl_bytes, ul_bytes)` samples. Smaller bins (e.g., 0.2) preserve burstiness; larger bins (e.g., 2.0) smooth traffic. Default 1.0 aligns with the simulator’s 1 s step.
 - `--trace-loop`: when enabled, traces repeat seamlessly after the last sample. Without this, each trace plays once and stops offering new bytes after the end.
 

@@ -371,7 +371,7 @@ class UE:
         step_ul = 0
         while self._trace_idx < n and self._trace_samples[self._trace_idx][0] <= self._trace_clock_s:
             _, dl, ul = self._trace_samples[self._trace_idx]
-            self.dl_buffer_bytes += int(dl or 0)
+            # Phase 2: DL replay is managed at the gNB (BS). Do not enqueue DL here.
             self.ul_buffer_bytes += int(ul or 0)
             self._trace_idx += 1
             step_dl += int(dl or 0)
@@ -387,7 +387,7 @@ class UE:
                 or self.ue_imsi in getattr(settings, "TRACE_DEBUG_IMSI", set())
             ):
                 logger.info(
-                    f"[trace] {self.ue_imsi}: t={self._trace_clock_s:.2f}s idx={self._trace_idx}/{n} enq_dl={step_dl}B enq_ul={step_ul}B buf_dl={self.dl_buffer_bytes}B"
+                    f"[trace] {self.ue_imsi}: t={self._trace_clock_s:.2f}s idx={self._trace_idx}/{n} enq_dl={step_dl}B enq_ul={step_ul}B"
                 )
         # If loop mode is enabled and we have consumed all samples, wrap clock and index
         try:
