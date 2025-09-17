@@ -40,6 +40,12 @@ class BaseStation:
 
         self.ai_service_event_handler = None
 
+        # ---------------- DL replay and buffering (gNB-side) ----------------
+        # Per-UE DL buffer in bytes: models queued downlink data at the gNB.
+        self._dl_buf = {}  # {imsi: int}
+        # Per-UE DL replay state: samples [(t_s, dl_bytes, ul_bytes)], idx, clock, speedup, period
+        self._dl_replay = {}  # {imsi: {samples, idx, clock_s, speedup, period_s}}
+
     def __repr__(self):
         return f"BS {self.bs_id}"
 
@@ -55,6 +61,81 @@ class BaseStation:
         logger.info(f"{self} received UE reported RRC measurement event:")
         logger.info(event)
         self.ue_rrc_meas_events.append(event)
+
+    # ---------------------- DL buffer / replay APIs ----------------------
+    def attach_dl_trace(self, ue_imsi, samples, speedup: float = 1.0):
+        """Attach a DL trace (samples list of (t_s, dl_bytes, ul_bytes)) to this BS for a UE."""
+        if not samples:
+            return False
+        try:
+            period = float(samples[-1][0]) if len(samples) > 0 else 0.0
+        except Exception:
+            period = 0.0
+        self._dl_replay[ue_imsi] = {
+            "samples": list(samples),
+            "idx": 0,
+            "clock_s": 0.0,
+            "speedup": max(1e-6, float(speedup)),
+            "period_s": float(period),
+        }
+        # Ensure buffer entry exists
+        self._dl_buf.setdefault(ue_imsi, 0)
+        return True
+
+    def enqueue_dl_bytes(self, ue_imsi: str, nbytes: int) -> int:
+        if nbytes <= 0:
+            return 0
+        cur = int(self._dl_buf.get(ue_imsi, 0) or 0)
+        self._dl_buf[ue_imsi] = cur + int(nbytes)
+        return nbytes
+
+    def pull_dl_bytes(self, ue_imsi: str, cap_bytes: int) -> int:
+        cur = int(self._dl_buf.get(ue_imsi, 0) or 0)
+        take = max(0, min(cur, int(cap_bytes)))
+        self._dl_buf[ue_imsi] = cur - take
+        return take
+
+    def get_dl_buf_bytes(self, ue_imsi: str) -> int:
+        return int(self._dl_buf.get(ue_imsi, 0) or 0)
+
+    def has_dl_replay(self, ue_imsi: str) -> bool:
+        return ue_imsi in self._dl_replay
+
+    def tick_dl_replay(self, dt: float):
+        """Advance all UE DL replay clocks and enqueue any due arrivals into the gNB buffer."""
+        try:
+            step = float(dt)
+        except Exception:
+            step = 0.0
+        if step <= 0:
+            return
+        for imsi, st in list(self._dl_replay.items()):
+            samples = st.get("samples") or []
+            if not samples:
+                continue
+            spd = float(st.get("speedup", 1.0) or 1.0)
+            st["clock_s"] = float(st.get("clock_s", 0.0)) + step * spd
+            clock = st["clock_s"]
+            idx = int(st.get("idx", 0))
+            n = len(samples)
+            # Enqueue all DL bytes up to current clock
+            while idx < n and float(samples[idx][0]) <= clock:
+                dl = int(samples[idx][1] or 0)
+                if dl > 0:
+                    self.enqueue_dl_bytes(imsi, dl)
+                idx += 1
+            st["idx"] = idx
+            # Optional looping
+            try:
+                from settings import TRACE_LOOP
+            except Exception:
+                TRACE_LOOP = False
+            period = float(st.get("period_s", 0.0) or 0.0)
+            if TRACE_LOOP and period > 0 and idx >= n:
+                # keep overflow beyond the period
+                while st["clock_s"] >= period:
+                    st["clock_s"] -= period
+                st["idx"] = 0
 
     def handle_ue_authentication_and_registration(self, ue):
         core_response = self.core_network.handle_ue_authentication_and_registration(ue)
@@ -185,7 +266,12 @@ class BaseStation:
             )
 
     def step(self, delta_time):
-        # first update cell first
+        # Tick DL replayers (enqueue arrivals) before cells serve
+        try:
+            self.tick_dl_replay(delta_time)
+        except Exception:
+            pass
+        # then update cells (serving, scheduling)
         for cell in self.cell_list.values():
             cell.step(delta_time)
 

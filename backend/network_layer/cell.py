@@ -326,17 +326,23 @@ class Cell:
             )
             # Save achievable capacity (bps)
             ue.achievable_downlink_bitrate = cap_bps
-            # If a trace is attached, serve from buffer up to capacity
-            #served_bps = cap_bps  ##  This might make an issue if there is no trace
+            # If a trace is attached (UE-managed) or BS manages DL replay for this UE, serve from buffer up to capacity
             dt = getattr(settings, "SIM_STEP_TIME_DEFAULT", 1) or 1
-            if getattr(ue, "_trace_samples", None) is not None:
+            has_replay = (getattr(ue, "_trace_samples", None) is not None) or (
+                hasattr(self.base_station, "has_dl_replay") and self.base_station.has_dl_replay(ue.ue_imsi)
+            )
+            if has_replay:
                 # How many bytes can we serve this step given capacity?
                 cap_bytes = int((cap_bps * dt) / 8)
-                take = min(max(0, int(ue.dl_buffer_bytes)), max(0, cap_bytes))
+                if hasattr(self.base_station, "pull_dl_bytes") and self.base_station.has_dl_replay(ue.ue_imsi):
+                    take = self.base_station.pull_dl_bytes(ue.ue_imsi, cap_bytes)
+                    # Mirror remaining queue for UI/backcompat
+                    ue.dl_buffer_bytes = int(getattr(self.base_station, "get_dl_buf_bytes", lambda x: 0)(ue.ue_imsi))
+                else:
+                    take = min(max(0, int(ue.dl_buffer_bytes)), max(0, cap_bytes))
+                    ue.dl_buffer_bytes = max(0, ue.dl_buffer_bytes - take)
                 # Compute served bitrate
                 served_bps = (take * 8) / dt if dt > 0 else 0
-                # Dequeue from buffer
-                ue.dl_buffer_bytes = max(0, ue.dl_buffer_bytes - take)
                 ue.served_downlink_bitrate = served_bps
                 # Trace debug counters
                 try:
@@ -361,7 +367,7 @@ class Cell:
                 ue.set_downlink_bitrate(0.0)
             # TODO: downlink and uplink latency
             # After serving downlink data (after buffer update)
-            if getattr(ue, "_trace_samples", None) is not None:
+            if has_replay:
                 # Transmission delay for this step
                 #transmission_delay = (take * 8) / served_bps if served_bps > 0 else 0
                 #print("Transmission Delay:", transmission_delay)

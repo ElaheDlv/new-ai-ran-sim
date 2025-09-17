@@ -209,13 +209,23 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
                 # Reuse cached samples for the same (file, ue_ip, bin)
                 samples = self._trace_cache[cache_key]
 
-            # If we have any samples, attach to UE with speedup
+            # If we have any samples, attach DL replay to BS (preferred)
             if samples:
                 speed = getattr(settings, "TRACE_SPEEDUP", 1.0)
-                ue.attach_trace(samples, speed)
-                logger.info(
-                    f"Attached RAW trace to {ue.ue_imsi} from {path} (samples={len(samples)}, bin={bin_s}s, speedup={speed}, ue_ip={ue_ip or 'AUTO'})"
-                )
+                bs = ue.current_bs
+                try:
+                    if bs and hasattr(bs, "attach_dl_trace"):
+                        bs.attach_dl_trace(ue.ue_imsi, samples, speed)
+                        logger.info(
+                            f"Attached RAW DL trace (BS) to {ue.ue_imsi} from {path} (samples={len(samples)}, bin={bin_s}s, speedup={speed}, ue_ip={ue_ip or 'AUTO'})"
+                        )
+                    else:
+                        ue.attach_trace(samples, speed)
+                        logger.info(
+                            f"Attached RAW trace (UE) to {ue.ue_imsi} from {path} (samples={len(samples)}, bin={bin_s}s, speedup={speed}, ue_ip={ue_ip or 'AUTO'})"
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to attach DL trace for {ue.ue_imsi}: {e}")
             return  # done regardless of success; no other trace types enabled
 
         # Aggregated CSV mapping is disabled in this configuration; prefer RAW traces only
