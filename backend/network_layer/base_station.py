@@ -258,6 +258,20 @@ class BaseStation:
             ue_reg_data["rrc_meas_events"] = target_bs.rrc_measurement_events.copy()
             target_bs.ue_registry[ue.ue_imsi] = ue_reg_data
             target_cell.register_ue(ue)
+            # Move DL buffer + replay state across BSs (if present)
+            try:
+                buf_bytes = 0
+                if hasattr(source_bs, "_dl_buf") and ue.ue_imsi in getattr(source_bs, "_dl_buf", {}):
+                    buf_bytes = int(source_bs._dl_buf.pop(ue.ue_imsi, 0) or 0)
+                st = None
+                if hasattr(source_bs, "_dl_replay") and ue.ue_imsi in getattr(source_bs, "_dl_replay", {}):
+                    st = source_bs._dl_replay.pop(ue.ue_imsi, None)
+                if hasattr(target_bs, "_dl_buf"):
+                    target_bs._dl_buf[ue.ue_imsi] = int(getattr(target_bs, "_dl_buf", {}).get(ue.ue_imsi, 0) or 0) + buf_bytes
+                if st is not None and hasattr(target_bs, "_dl_replay"):
+                    target_bs._dl_replay[ue.ue_imsi] = st
+            except Exception:
+                pass
             ue.execute_handover(target_cell)
             source_cell.deregister_ue(ue)
             del source_bs.ue_registry[ue.ue_imsi]
