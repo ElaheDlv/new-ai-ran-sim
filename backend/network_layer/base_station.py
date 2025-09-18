@@ -4,6 +4,7 @@ from .cell import Cell
 from .edge_server import EdgeServer
 import logging
 import base64
+from utils.traffic_trace import estimate_trace_period
 
 
 
@@ -67,10 +68,8 @@ class BaseStation:
         """Attach a DL trace (samples list of (t_s, dl_bytes, ul_bytes)) to this BS for a UE."""
         if not samples:
             return False
-        try:
-            period = float(samples[-1][0]) if len(samples) > 0 else 0.0
-        except Exception:
-            period = 0.0
+        period_hint = getattr(settings, "TRACE_BIN", None)
+        period = float(estimate_trace_period(samples, default_step=period_hint))
         self._dl_replay[ue_imsi] = {
             "samples": list(samples),
             "idx": 0,
@@ -109,6 +108,7 @@ class BaseStation:
             step = 0.0
         if step <= 0:
             return
+        loop_enabled = bool(getattr(settings, "TRACE_LOOP", False))
         for imsi, st in list(self._dl_replay.items()):
             samples = st.get("samples") or []
             if not samples:
@@ -118,24 +118,26 @@ class BaseStation:
             clock = st["clock_s"]
             idx = int(st.get("idx", 0))
             n = len(samples)
-            # Enqueue all DL bytes up to current clock
-            while idx < n and float(samples[idx][0]) <= clock:
-                dl = int(samples[idx][1] or 0)
-                if dl > 0:
-                    self.enqueue_dl_bytes(imsi, dl)
-                idx += 1
-            st["idx"] = idx
-            # Optional looping
-            try:
-                from settings import TRACE_LOOP
-            except Exception:
-                TRACE_LOOP = False
             period = float(st.get("period_s", 0.0) or 0.0)
-            if TRACE_LOOP and period > 0 and idx >= n:
-                # keep overflow beyond the period
+
+            while True:
+                # Enqueue all DL bytes up to current clock
+                while idx < n and float(samples[idx][0]) <= clock:
+                    dl = int(samples[idx][1] or 0)
+                    if dl > 0:
+                        self.enqueue_dl_bytes(imsi, dl)
+                    idx += 1
+
+                st["idx"] = idx
+
+                if not (loop_enabled and period > 0 and idx >= n and clock >= period):
+                    break
+
+                # Wrap clock into next period and continue draining within this tick
                 while st["clock_s"] >= period:
                     st["clock_s"] -= period
-                st["idx"] = 0
+                clock = st["clock_s"]
+                idx = 0
 
     def handle_ue_authentication_and_registration(self, ue):
         core_response = self.core_network.handle_ue_authentication_and_registration(ue)

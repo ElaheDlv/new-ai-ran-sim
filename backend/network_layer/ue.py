@@ -10,6 +10,7 @@ from utils import (
     dbm_to_watts,
     sinr_to_cqi,
 )
+from utils.traffic_trace import estimate_trace_period
 from tabulate import tabulate
 
 import settings
@@ -324,11 +325,11 @@ class UE:
         self._trace_enqueued_ul_last = 0
         self._trace_served_dl_last = 0
         # Cache the period (duration) for optional looping
+        period_hint = getattr(settings, "TRACE_BIN", None)
         try:
-            if self._trace_samples and len(self._trace_samples) > 0:
-                self._trace_period_s = float(self._trace_samples[-1][0])
-            else:
-                self._trace_period_s = 0.0
+            self._trace_period_s = float(
+                estimate_trace_period(self._trace_samples or [], default_step=period_hint)
+            )
         except Exception:
             self._trace_period_s = 0.0
         # Optional: emit a one-line summary when debugging is enabled
@@ -365,17 +366,33 @@ class UE:
             return
         # Advance trace playback clock according to speedup
         self._trace_clock_s += dt * self._trace_speedup
+        clock = self._trace_clock_s
         n = len(self._trace_samples)
         # Enqueue all samples up to current clock
         step_dl = 0
         step_ul = 0
-        while self._trace_idx < n and self._trace_samples[self._trace_idx][0] <= self._trace_clock_s:
-            _, dl, ul = self._trace_samples[self._trace_idx]
-            # Phase 2: DL replay is managed at the gNB (BS). Do not enqueue DL here.
-            self.ul_buffer_bytes += int(ul or 0)
-            self._trace_idx += 1
-            step_dl += int(dl or 0)
-            step_ul += int(ul or 0)
+        loop_enabled = bool(getattr(settings, "TRACE_LOOP", False))
+        idx = self._trace_idx
+        period = float(getattr(self, "_trace_period_s", 0.0) or 0.0)
+
+        while True:
+            while idx < n and float(self._trace_samples[idx][0]) <= clock:
+                _, dl, ul = self._trace_samples[idx]
+                # Phase 2: DL replay is managed at the gNB (BS). Do not enqueue DL here.
+                self.ul_buffer_bytes += int(ul or 0)
+                idx += 1
+                step_dl += int(dl or 0)
+                step_ul += int(ul or 0)
+
+            if not (loop_enabled and period > 0 and idx >= n and clock >= period):
+                break
+
+            while self._trace_clock_s >= period:
+                self._trace_clock_s -= period
+            clock = self._trace_clock_s
+            idx = 0
+
+        self._trace_idx = idx
         # Update counters and optionally log
         if step_dl or step_ul:
             self._trace_enqueued_dl_last = step_dl
@@ -389,15 +406,6 @@ class UE:
                 logger.info(
                     f"[trace] {self.ue_imsi}: t={self._trace_clock_s:.2f}s idx={self._trace_idx}/{n} enq_dl={step_dl}B enq_ul={step_ul}B"
                 )
-        # If loop mode is enabled and we have consumed all samples, wrap clock and index
-        try:
-            if getattr(settings, "TRACE_LOOP", False) and self._trace_period_s > 0 and self._trace_idx >= n:
-                # Keep any overflow beyond the period (e.g., large dt at wrap)
-                while self._trace_clock_s >= self._trace_period_s:
-                    self._trace_clock_s -= self._trace_period_s
-                self._trace_idx = 0
-        except Exception:
-            pass
 
     def move_towards_target(self, delta_time):
         if self.target_x is not None and self.target_y is not None:

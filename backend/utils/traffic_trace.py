@@ -3,6 +3,56 @@ import os
 import logging
 from typing import List, Tuple, Dict, Optional, Any
 import math
+from statistics import median
+
+
+def estimate_trace_period(
+    samples: List[Tuple[float, int, int]],
+    default_step: Optional[float] = None,
+) -> float:
+    """Infer the replay period (seconds) for a trace from sample timestamps."""
+
+    if not samples:
+        return 0.0
+
+    try:
+        fallback = float(default_step) if default_step is not None else None
+    except Exception:
+        fallback = None
+    if fallback is None or fallback <= 0:
+        fallback = 1.0
+
+    try:
+        times = sorted(float(s[0]) for s in samples if s is not None)
+    except Exception:
+        times = []
+    if not times:
+        return fallback
+
+    last_t = times[-1]
+    if len(times) == 1:
+        return last_t + fallback
+
+    deltas = []
+    prev = times[0]
+    for t in times[1:]:
+        try:
+            delta = float(t) - float(prev)
+        except Exception:
+            delta = 0.0
+        if delta > 1e-9:
+            deltas.append(delta)
+        prev = t
+
+    if deltas:
+        step = median(deltas)
+    else:
+        step = fallback
+
+    if step <= 0:
+        step = fallback
+
+    return last_t + step
 
 
 def load_csv_trace(path: str) -> List[Tuple[float, int, int]]:
