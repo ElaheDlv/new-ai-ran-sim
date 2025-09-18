@@ -42,9 +42,9 @@ class BaseStation:
         self.ai_service_event_handler = None
 
         # ---------------- DL replay and buffering (gNB-side) ----------------
-        # Per-UE DL buffer in bytes: models queued downlink data at the gNB.
+        # Per-UE DL buffer in bytes: represents queued downlink traffic waiting at the gNB.
         self._dl_buf = {}  # {imsi: int}
-        # Per-UE DL replay state: samples [(t_s, dl_bytes, ul_bytes)], idx, clock, speedup, period
+        # Per-UE DL replay state: holds trace samples plus runtime cursor/clock info.
         self._dl_replay = {}  # {imsi: {samples, idx, clock_s, speedup, period_s}}
 
     def __repr__(self):
@@ -65,7 +65,15 @@ class BaseStation:
 
     # ---------------------- DL buffer / replay APIs ----------------------
     def attach_dl_trace(self, ue_imsi, samples, speedup: float = 1.0):
-        """Attach a DL trace (samples list of (t_s, dl_bytes, ul_bytes)) to this BS for a UE."""
+        """Attach a DL trace (samples list of (t_s, dl_bytes, ul_bytes)) to this BS for a UE.
+
+        Overview of the replay pipeline:
+        - Trace samples arrive as (time, dl_bytes, ul_bytes) buckets where *time* marks the
+          start of each bin. When replaying we must enqueue bytes at `time*speedup`.
+        - The base station maintains a replay clock per UE; each simulator tick advances the
+          clock and drains all samples whose (scaled) time has elapsed into the DL buffer.
+        - Cells pull bytes from that buffer when they schedule downlink transmissions.
+        """
         if not samples:
             return False
         period_hint = getattr(settings, "TRACE_BIN", None)
@@ -114,14 +122,18 @@ class BaseStation:
             if not samples:
                 continue
             spd = float(st.get("speedup", 1.0) or 1.0)
+            # Advance replay clock by dt*speedup so faster replays compress time.
             st["clock_s"] = float(st.get("clock_s", 0.0)) + step * spd
             clock = st["clock_s"]
+            # idx tracks the next sample to enqueue for this UE.
             idx = int(st.get("idx", 0))
             n = len(samples)
             period = float(st.get("period_s", 0.0) or 0.0)
 
             while True:
-                # Enqueue all DL bytes up to current clock
+                # Drain all samples whose timestamps are <= current clock. Each sample time is
+                # compared against the scaled replay clock so late-arriving bins get enqueued
+                # exactly once per cycle.
                 while idx < n and float(samples[idx][0]) <= clock:
                     dl = int(samples[idx][1] or 0)
                     if dl > 0:
@@ -133,7 +145,9 @@ class BaseStation:
                 if not (loop_enabled and period > 0 and idx >= n and clock >= period):
                     break
 
-                # Wrap clock into next period and continue draining within this tick
+                # If looping, wrap the clock and continue in the same simulator tick. This
+                # preserves bursts that straddle the end/start boundary and ensures the last
+                # sample is replayed before the first sample of the next cycle.
                 while st["clock_s"] >= period:
                     st["clock_s"] -= period
                 clock = st["clock_s"]
