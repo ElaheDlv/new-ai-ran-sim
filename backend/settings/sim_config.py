@@ -87,6 +87,21 @@ except Exception:
 # Loop trace playback when enabled (replays continuously)
 TRACE_LOOP = os.getenv("TRACE_LOOP", "0") in ("1", "true", "True")
 
+# Base station / UE buffer sizing (bytes). Defaults approximate generous gNB buffers.
+try:
+    TRACE_DL_BUFFER_LIMIT_BYTES = int(
+        os.getenv("TRACE_DL_BUFFER_LIMIT_BYTES", str(256 * 1024 * 1024))
+    )
+except Exception:
+    TRACE_DL_BUFFER_LIMIT_BYTES = 256 * 1024 * 1024
+
+try:
+    TRACE_UL_BUFFER_LIMIT_BYTES = int(
+        os.getenv("TRACE_UL_BUFFER_LIMIT_BYTES", str(64 * 1024 * 1024))
+    )
+except Exception:
+    TRACE_UL_BUFFER_LIMIT_BYTES = 64 * 1024 * 1024
+
 # Trace debug controls
 TRACE_DEBUG = os.getenv("TRACE_DEBUG", "0") in ("1", "true", "True")
 TRACE_DEBUG_IMSI = set([

@@ -379,10 +379,20 @@ class UE:
             while idx < n and float(self._trace_samples[idx][0]) <= clock:
                 _, dl, ul = self._trace_samples[idx]
                 # Phase 2: DL replay is managed at the gNB (BS). Do not enqueue DL here.
-                self.ul_buffer_bytes += int(ul or 0)
+                inc_ul = int(ul or 0)
+                if inc_ul > 0:
+                    limit = max(0, int(getattr(settings, "TRACE_UL_BUFFER_LIMIT_BYTES", 0) or 0))
+                    if limit > 0:
+                        space = max(0, limit - int(self.ul_buffer_bytes))
+                        if space <= 0:
+                            inc_ul = 0
+                        elif inc_ul > space:
+                            inc_ul = space
+                    if inc_ul > 0:
+                        self.ul_buffer_bytes += inc_ul
                 idx += 1
                 step_dl += int(dl or 0)
-                step_ul += int(ul or 0)
+                step_ul += inc_ul
 
             if not (loop_enabled and period > 0 and idx >= n and clock >= period):
                 break

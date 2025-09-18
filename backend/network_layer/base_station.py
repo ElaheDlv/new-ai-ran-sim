@@ -93,8 +93,24 @@ class BaseStation:
         if nbytes <= 0:
             return 0
         cur = int(self._dl_buf.get(ue_imsi, 0) or 0)
-        self._dl_buf[ue_imsi] = cur + int(nbytes)
-        return nbytes
+        limit = max(0, int(getattr(settings, "TRACE_DL_BUFFER_LIMIT_BYTES", 0) or 0))
+        add = int(nbytes)
+        if limit > 0:
+            space = max(0, limit - cur)
+            if space <= 0:
+                return 0
+            if add > space:
+                if getattr(settings, "TRACE_DEBUG", False):
+                    logger.debug(
+                        "[trace] %s DL buffer capped: requested=%d space=%d limit=%d",
+                        ue_imsi,
+                        nbytes,
+                        space,
+                        limit,
+                    )
+                add = space
+        self._dl_buf[ue_imsi] = cur + add
+        return add
 
     def pull_dl_bytes(self, ue_imsi: str, cap_bytes: int) -> int:
         cur = int(self._dl_buf.get(ue_imsi, 0) or 0)
