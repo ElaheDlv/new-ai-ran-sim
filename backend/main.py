@@ -61,6 +61,12 @@ parser.add_argument("--dqn-tb-dir", type=str, help="TensorBoard log dir for DQN"
 parser.add_argument("--dqn-wandb", action="store_true", help="Enable Weights & Biases logging for DQN")
 parser.add_argument("--dqn-wandb-project", type=str, help="W&B project name")
 parser.add_argument("--dqn-wandb-name", type=str, help="W&B run name")
+# SB3 DQN variant controls
+parser.add_argument("--sb3-dqn-prb", action="store_true", help="Enable SB3-based DQN PRB allocator xApp")
+parser.add_argument("--sb3-dqn-model", type=str, help="Path to load/save SB3 DQN model")
+parser.add_argument("--sb3-dqn-total-steps", type=int, help="Nominal total steps for SB3 progress schedule")
+parser.add_argument("--sb3-dqn-target-update", type=int, help="Target network update interval for SB3 DQN")
+parser.add_argument("--sb3-dqn-save-interval", type=int, help="Autosave interval (steps) for SB3 DQN model")
 # Trace replay options
 parser.add_argument(
     "--trace-speedup",
@@ -175,6 +181,18 @@ if args.dqn_wandb_project:
     os.environ["DQN_WANDB_PROJECT"] = args.dqn_wandb_project
 if args.dqn_wandb_name:
     os.environ["DQN_WANDB_RUNNAME"] = args.dqn_wandb_name
+
+# SB3 DQN env exports
+if args.sb3_dqn_prb:
+    os.environ["SB3_DQN_PRB_ENABLE"] = "1"
+if args.sb3_dqn_model:
+    os.environ["SB3_DQN_MODEL_PATH"] = args.sb3_dqn_model
+if args.sb3_dqn_total_steps is not None:
+    os.environ["SB3_DQN_TOTAL_STEPS"] = str(args.sb3_dqn_total_steps)
+if args.sb3_dqn_target_update is not None:
+    os.environ["SB3_DQN_TARGET_UPDATE"] = str(args.sb3_dqn_target_update)
+if args.sb3_dqn_save_interval is not None:
+    os.environ["SB3_DQN_SAVE_INTERVAL"] = str(args.sb3_dqn_save_interval)
 
 # Trace mapping and options (export via env before importing settings)
 if args.trace_speedup is not None:

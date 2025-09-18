@@ -408,7 +408,8 @@ Example xApps are located in the `network_layer/xApps/` directory:
 - Blind Handover xApp: Implements handover decisions based on RRC Event A3.
 - AI service monitoring xApp: Monitors the AI service performance and provides insights.
  - Live KPI Dashboard xApp: Real‑time UE/Cell KPIs with per‑UE cap and per‑slice PRB controls.
- - DQN PRB Allocator xApp: Learns to shift DL PRBs among slices (eMBB/URLLC/mMTC) using a DQN policy inspired by the Tractor paper.
+- DQN PRB Allocator xApp: Learns to shift DL PRBs among slices (eMBB/URLLC/mMTC) using a DQN policy inspired by the Tractor paper.
+- SB3 DQN PRB Allocator xApp: Same objective as the DQN PRB allocator but powered by Stable-Baselines3.
 
 To load custom xApps, add them to the xApps/ directory and ensure they inherit from the xAppBase class.
 
@@ -443,6 +444,25 @@ Notes:
 - The xApp applies actions after each simulator step; changes take effect in the next allocation round.
 - Rewards use current KPIs and are a practical instantiation of the paper’s formulas; you can refine the shaping or weights in `settings/ran_config.py`.
 - If `torch` is unavailable, the xApp disables itself gracefully.
+
+### SB3 DQN PRB Allocator xApp
+
+`xapp_sb3_dqn_prb_allocator.py` mirrors the state/action/reward design of the custom DQN but uses the Stable-Baselines3
+implementation under the hood so you can validate results or reuse SB3 tooling. Enable it with:
+
+```bash
+pip install stable-baselines3 gymnasium  # if not already installed
+
+python backend/main.py --preset simple --mode server \
+  --sb3-dqn-prb --dqn-train --dqn-period 1 --dqn-move-step 1
+```
+
+Key toggles/env vars:
+- `--sb3-dqn-prb` (or `SB3_DQN_PRB_ENABLE=1`): enable the SB3-backed xApp.
+- `SB3_DQN_MODEL_PATH`: checkpoint path (defaults to `backend/models/dqn_prb_sb3.zip`).
+- `SB3_DQN_TOTAL_STEPS`, `SB3_DQN_TARGET_UPDATE`, `SB3_DQN_SAVE_INTERVAL`: tune learning horizon, target-network refresh, and autosave cadence.
+
+The xApp falls back to inference-only if SB3/Gymnasium are unavailable.
 
 #### DQN Training Telemetry (TensorBoard / W&B)
 
