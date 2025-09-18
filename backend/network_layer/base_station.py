@@ -148,6 +148,12 @@ class BaseStation:
         }
         self.ue_registry[ue.ue_imsi] = ue_reg_data
         ue.current_cell.register_ue(ue)
+        # Ensure gNB DL buffer entry exists for this UE (even if no trace yet)
+        try:
+            if hasattr(self, "_dl_buf"):
+                self._dl_buf.setdefault(ue.ue_imsi, 0)
+        except Exception:
+            pass
         return ue_reg_data.copy()
 
     def handle_deregistration_request(self, ue):
