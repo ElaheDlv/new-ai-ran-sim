@@ -741,7 +741,9 @@ class xAppLiveKPIDashboard(xAppBase):
                     a_mv = act.get("moved", 0)
                     a_step = act.get("step", "-")
                     who = act.get("actor", "?")
-                    extra = f" | last {who}: {a_lbl} (+{a_mv}) at step {a_step}"
+                    src_engine = act.get("source")
+                    engine_tag = f" ({src_engine})" if src_engine else ""
+                    extra = f" | last {who}{engine_tag}: {a_lbl} (+{a_mv}) at step {a_step}"
                 else:
                     extra = ""
                 quota_lines.append(f"{cid}: eMBB={e}, URLLC={u}, mMTC={m} (max {maxp}){extra}")

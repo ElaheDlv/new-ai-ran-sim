@@ -374,7 +374,7 @@ class Cell:
                 transmission_delay = 0.0
                 # Queuing delay: remaining buffer to be served
                 queuing_delay = (ue.dl_buffer_bytes * 8) / cap_bps if cap_bps > 0 else 0
-                print("Queuing Delay:", queuing_delay)
+                #print("Queuing Delay:", queuing_delay)
                 # Total downlink latency
                 ue.downlink_latency = transmission_delay + queuing_delay
             else:

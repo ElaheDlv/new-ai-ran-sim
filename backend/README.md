@@ -464,6 +464,13 @@ Key toggles/env vars:
 
 The xApp falls back to inference-only if SB3/Gymnasium are unavailable.
 
+Logging mirrors the custom DQN xApp, so you can reuse the same flags:
+
+- TensorBoard: `python backend/main.py ... --sb3-dqn-prb --dqn-train --dqn-log-tb --dqn-tb-dir backend/tb_logs`
+- Weights & Biases: `python backend/main.py ... --sb3-dqn-prb --dqn-train --dqn-wandb --dqn-wandb-project ai-ran-dqn`
+
+Both commands share the rest of the arguments with your run (UE counts, traces, etc.). Internally they set `DQN_TB_ENABLE` / `DQN_WANDB_ENABLE`, which the SB3 allocator now honors alongside the custom DQN.
+
 #### DQN Training Telemetry (TensorBoard / W&B)
 
 You can visualize training with TensorBoard or Weights & Biases (optional):

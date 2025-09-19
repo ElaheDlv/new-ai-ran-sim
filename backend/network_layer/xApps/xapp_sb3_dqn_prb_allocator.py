@@ -329,7 +329,8 @@ class xAppSB3DQNPRBAllocator(xAppBase):
         if mv is None:
             try:
                 setattr(cell, "rl_last_action", {
-                    "actor": "SB3-DQN",
+                    "actor": "DQN",
+                    "source": "SB3",
                     "code": int(action),
                     "label": "keep",
                     "moved": 0,
@@ -348,7 +349,8 @@ class xAppSB3DQNPRBAllocator(xAppBase):
                 self._action_counts[action] += 1
                 try:
                     setattr(cell, "rl_last_action", {
-                        "actor": "SB3-DQN",
+                        "actor": "DQN",
+                        "source": "SB3",
                         "code": int(action),
                         "label": f"{src}→{dst}",
                         "moved": int(self.move_step),
