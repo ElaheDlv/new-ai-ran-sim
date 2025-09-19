@@ -55,7 +55,7 @@ if SB3_AVAILABLE:
         def __init__(self, obs_dim: int, n_actions: int):
             super().__init__()
             self.observation_space = spaces.Box(
-                low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
+                low=0, high=1, shape=(obs_dim,), dtype=np.float32
             )
             self.action_space = spaces.Discrete(n_actions)
 
@@ -123,6 +123,7 @@ class xAppSB3DQNPRBAllocator(xAppBase):
         self._sb3_env = None
         self._model: Optional[SB3DQN] = None
         self._tb = None
+        self._wandb = None
 
         if not self.enabled:
             return
@@ -146,6 +147,30 @@ class xAppSB3DQNPRBAllocator(xAppBase):
             except Exception as exc:
                 print(f"{self.xapp_id}: TensorBoard unavailable ({exc}); continuing without it.")
                 self._tb = None
+
+        if getattr(settings, "DQN_WANDB_ENABLE", False):
+            try:
+                import wandb
+
+                cfg = {
+                    "gamma": self.gamma,
+                    "lr": self.lr,
+                    "batch": self.batch,
+                    "buffer": self.buffer_cap,
+                    "epsilon_start": self.eps_start,
+                    "epsilon_end": self.eps_end,
+                    "epsilon_decay": self.eps_decay,
+                    "period_steps": self.period_steps,
+                    "move_step": self.move_step,
+                    "sb3_target_update": self.sb3_target_update,
+                }
+                proj = getattr(settings, "DQN_WANDB_PROJECT", "ai-ran-dqn")
+                name = getattr(settings, "DQN_WANDB_RUNNAME", "") or None
+                self._wandb = wandb.init(project=proj, name=name, config=cfg)
+                print(f"{self.xapp_id}: W&B logging enabled (project={proj})")
+            except Exception as exc:
+                print(f"{self.xapp_id}: W&B unavailable ({exc}); continuing without it.")
+                self._wandb = None
 
         # Build a trivial Gym env so SB3 can instantiate its policy/Q-networks
         def _make_env():
@@ -391,6 +416,20 @@ class xAppSB3DQNPRBAllocator(xAppBase):
                     metrics = self._aggregate_slice_metrics(cell)
                     self._tb.add_scalar(f"cell/{cell.cell_id}/embb_buf_bytes", metrics[SL_E]["buf_bytes"], self._t)
                     self._tb.add_scalar(f"cell/{cell.cell_id}/urllc_buf_bytes", metrics[SL_U]["buf_bytes"], self._t)
+                except Exception:
+                    pass
+            if self._wandb is not None:
+                try:
+                    import wandb
+
+                    metrics = self._aggregate_slice_metrics(cell)
+                    self._wandb.log(
+                        {
+                            f"cell/{cell.cell_id}/embb_buf_bytes": metrics[SL_E]["buf_bytes"],
+                            f"cell/{cell.cell_id}/urllc_buf_bytes": metrics[SL_U]["buf_bytes"],
+                        },
+                        step=self._t,
+                    )
                 except Exception:
                     pass
 

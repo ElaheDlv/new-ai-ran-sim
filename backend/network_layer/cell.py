@@ -338,9 +338,9 @@ class Cell:
                     take = self.base_station.pull_dl_bytes(ue.ue_imsi, cap_bytes)
                     # Mirror remaining queue for UI/backcompat
                     ue.dl_buffer_bytes = int(getattr(self.base_station, "get_dl_buf_bytes", lambda x: 0)(ue.ue_imsi))
-                else:
-                    take = min(max(0, int(ue.dl_buffer_bytes)), max(0, cap_bytes))
-                    ue.dl_buffer_bytes = max(0, ue.dl_buffer_bytes - take)
+                # else:  ### This  part might be useful in some cases .But for now we do not need it
+                #     take = min(max(0, int(ue.dl_buffer_bytes)), max(0, cap_bytes))
+                #     ue.dl_buffer_bytes = max(0, ue.dl_buffer_bytes - take)
                 # Compute served bitrate
                 served_bps = (take * 8) / dt if dt > 0 else 0
                 ue.served_downlink_bitrate = served_bps
