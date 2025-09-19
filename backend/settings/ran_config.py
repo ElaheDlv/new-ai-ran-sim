@@ -123,6 +123,21 @@ RAN_MCS_SPECTRAL_EFFICIENCY_TABLE = {
 # ---------------------------
 # Enable/disable DQN xApp
 DQN_PRB_ENABLE = os.getenv("DQN_PRB_ENABLE", "0") in ("1", "true", "True")
+# Enable/disable SB3-backed DQN xApp
+SB3_DQN_PRB_ENABLE = os.getenv("SB3_DQN_PRB_ENABLE", "0") in ("1", "true", "True")
+# SB3-specific knobs reuse many DQN defaults but expose their own env vars
+try:
+    SB3_DQN_TOTAL_STEPS = int(os.getenv("SB3_DQN_TOTAL_STEPS", "100000"))
+except Exception:
+    SB3_DQN_TOTAL_STEPS = 100000
+try:
+    SB3_DQN_TARGET_UPDATE = int(os.getenv("SB3_DQN_TARGET_UPDATE", "1000"))
+except Exception:
+    SB3_DQN_TARGET_UPDATE = 1000
+try:
+    SB3_DQN_SAVE_INTERVAL = int(os.getenv("SB3_DQN_SAVE_INTERVAL", "5000"))
+except Exception:
+    SB3_DQN_SAVE_INTERVAL = 5000
 # Train online (epsilon-greedy + replay) vs. inference-only
 DQN_PRB_TRAIN = os.getenv("DQN_PRB_TRAIN", "1") in ("1", "true", "True")
 # Steps between actions (period in sim steps)

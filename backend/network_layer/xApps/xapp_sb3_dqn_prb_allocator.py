@@ -124,6 +124,8 @@ class xAppSB3DQNPRBAllocator(xAppBase):
         self._model: Optional[SB3DQN] = None
         self._tb = None
         self._wandb = None
+        self._last_loss: Optional[float] = None
+        self._last_eps: float = 0.0
 
         if not self.enabled:
             return
@@ -198,6 +200,14 @@ class xAppSB3DQNPRBAllocator(xAppBase):
             tensorboard_log=None,
         )
 
+        try:
+            from stable_baselines3.common.logger import configure
+
+            if not hasattr(self._model, "_logger") or self._model._logger is None:  # type: ignore[attr-defined]
+                self._model.set_logger(configure(folder=None, format_strings=[]))
+        except Exception:
+            pass
+
         # Try loading existing parameters
         try:
             if os.path.exists(self.model_path):
@@ -205,6 +215,31 @@ class xAppSB3DQNPRBAllocator(xAppBase):
                 print(f"{self.xapp_id}: loaded SB3 model from {self.model_path}")
         except Exception as exc:
             print(f"{self.xapp_id}: failed to load SB3 model ({exc}); starting fresh.")
+            self._model = SB3DQN(
+                policy="MlpPolicy",
+                env=self._sb3_env,
+                learning_rate=self.lr,
+                buffer_size=self.buffer_cap,
+                learning_starts=0,
+                batch_size=self.batch,
+                gamma=self.gamma,
+                train_freq=1,
+                gradient_steps=1,
+                target_update_interval=max(1, self.sb3_target_update),
+                exploration_fraction=1.0,
+                exploration_initial_eps=self.eps_start,
+                exploration_final_eps=self.eps_end,
+                policy_kwargs=policy_kwargs,
+                verbose=0,
+                tensorboard_log=None,
+            )
+        try:
+            from stable_baselines3.common.logger import configure
+
+            if not hasattr(self._model, "_logger") or self._model._logger is None:  # type: ignore[attr-defined]
+                self._model.set_logger(configure(folder=None, format_strings=[]))
+        except Exception:
+            pass
 
     # ---------------- Lifecycle ----------------
     def start(self):
@@ -309,9 +344,15 @@ class xAppSB3DQNPRBAllocator(xAppBase):
             return 0
         if self.train_mode:
             eps = _linear_eps(self.eps_start, self.eps_end, self.eps_decay, self._t)
+            self._last_eps = eps
             if random.random() < eps:
                 return int(self._sb3_env.action_space.sample())  # type: ignore[union-attr]
         action, _ = self._model.predict(obs_vec, deterministic=True)
+        if hasattr(self._model, "exploration_rate"):
+            try:
+                self._last_eps = float(self._model.exploration_rate)  # type: ignore[attr-defined]
+            except Exception:
+                pass
         return int(action)
 
     def _apply_action(self, cell, action: int):
@@ -364,6 +405,21 @@ class xAppSB3DQNPRBAllocator(xAppBase):
             return ok
         return False
 
+    def _log(self, step_idx: int, cell_id: str, metrics: dict):
+        if self._tb is not None:
+            for k, v in metrics.items():
+                try:
+                    self._tb.add_scalar(f"cell/{cell_id}/{k}", float(v), step_idx)
+                except Exception:
+                    pass
+        if self._wandb is not None:
+            try:
+                import wandb
+
+                self._wandb.log({f"cell/{cell_id}/{k}": v for k, v in metrics.items()}, step=step_idx)
+            except Exception:
+                pass
+
     # ---------------- Main control loop ----------------
     def step(self):
         if not self.enabled or not self._model:
@@ -402,6 +458,7 @@ class xAppSB3DQNPRBAllocator(xAppBase):
                     )
                     if self._model.replay_buffer.size() >= max(32, self.batch):
                         self._model.train(gradient_steps=1, batch_size=self.batch)
+                        self._last_loss = None
                     progress = max(0.0, 1.0 - self._t / max(1, self.sb3_total_steps))
                     self._model._current_progress_remaining = progress
                     self._model._on_step()
@@ -412,28 +469,31 @@ class xAppSB3DQNPRBAllocator(xAppBase):
             self._apply_action(cell, action)
             self._per_cell_prev[cell.cell_id] = {"obs": obs, "action": action}
 
-            # Optional TB logging for visibility
-            if self._tb is not None:
-                try:
-                    metrics = self._aggregate_slice_metrics(cell)
-                    self._tb.add_scalar(f"cell/{cell.cell_id}/embb_buf_bytes", metrics[SL_E]["buf_bytes"], self._t)
-                    self._tb.add_scalar(f"cell/{cell.cell_id}/urllc_buf_bytes", metrics[SL_U]["buf_bytes"], self._t)
-                except Exception:
-                    pass
-            if self._wandb is not None:
-                try:
-                    import wandb
-
-                    metrics = self._aggregate_slice_metrics(cell)
-                    self._wandb.log(
-                        {
-                            f"cell/{cell.cell_id}/embb_buf_bytes": metrics[SL_E]["buf_bytes"],
-                            f"cell/{cell.cell_id}/urllc_buf_bytes": metrics[SL_U]["buf_bytes"],
-                        },
-                        step=self._t,
-                    )
-                except Exception:
-                    pass
+            # Per-step logging to TB/W&B
+            try:
+                T_s = float(getattr(settings, "SIM_STEP_TIME_DEFAULT", 1.0)) * float(self.period_steps)
+                reward_val = self._reward(cell, T_s)
+                embb_score, urllc_score, mmtc_score = self._slice_scores(cell, T_s)
+                prb_map = getattr(cell, "slice_dl_prb_quota", {}) or {}
+                agg = self._aggregate_slice_metrics(cell)
+                metrics = {
+                    "reward": reward_val,
+                    "embb_score": embb_score,
+                    "urllc_score": urllc_score,
+                    "mmtc_score": mmtc_score,
+                    "epsilon": self._last_eps if self.train_mode else 0.0,
+                    "loss": self._last_loss if self._last_loss is not None else 0.0,
+                    "prb_eMBB": float(prb_map.get(SL_E, 0) or 0.0),
+                    "prb_URLLC": float(prb_map.get(SL_U, 0) or 0.0),
+                    "prb_mMTC": float(prb_map.get(SL_M, 0) or 0.0),
+                    "embb_buf_bytes": float(agg[SL_E]["buf_bytes"]),
+                    "urllc_buf_bytes": float(agg[SL_U]["buf_bytes"]),
+                    "embb_tx_mbps": float(agg[SL_E]["tx_mbps"]),
+                    "urllc_tx_mbps": float(agg[SL_U]["tx_mbps"]),
+                }
+                self._log(self._t, cell.cell_id, metrics)
+            except Exception:
+                pass
 
         self._t += 1
 
