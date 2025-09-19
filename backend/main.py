@@ -116,6 +116,11 @@ parser.add_argument(
     action="store_true",
     help="Loop trace playback (replay continuously)",
 )
+parser.add_argument(
+    "--slice-prb",
+    action="append",
+    help="Initial downlink PRB quota per slice (format SLICE=PRBs or SLICE:PRBs). Repeatable.",
+)
 args, unknown = parser.parse_known_args()
 
 if args.preset:
@@ -268,6 +273,27 @@ if args.trace_debug_imsi:
     os.environ["TRACE_DEBUG_IMSI"] = args.trace_debug_imsi
 if args.trace_loop:
     os.environ["TRACE_LOOP"] = "1"
+
+if args.slice_prb:
+    overrides = {}
+    for item in args.slice_prb:
+        if not item:
+            continue
+        if "=" in item:
+            key, value = item.split("=", 1)
+        elif ":" in item:
+            key, value = item.split(":", 1)
+        else:
+            continue
+        key = key.strip()
+        if not key:
+            continue
+        try:
+            overrides[key] = int(float(value))
+        except Exception:
+            continue
+    if overrides:
+        os.environ["RAN_SLICE_DL_PRB_OVERRIDES"] = json.dumps(overrides)
 
 # Load .env (won't override already-set env)
 dotenv.load_dotenv()

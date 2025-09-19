@@ -12,6 +12,7 @@ from settings import (
     RAN_PRB_CAP_SLIDER_DEFAULT,
     RAN_PRB_CAP_SLIDER_MAX,
     RAN_SLICE_DL_PRB_SPLIT_DEFAULT,
+    RAN_SLICE_DL_PRB_OVERRIDES,
     RAN_SLICE_KNOB_STEP_FRAC,
     RAN_KPI_MAX_POINTS,
     RAN_KPI_LOG_ENABLE,
@@ -199,6 +200,27 @@ class xAppLiveKPIDashboard(xAppBase):
                 print(f"{self.xapp_id}: Failed to initialize KPI logging: {e}")
                 self._log_enabled = False
         self._start_dashboard()
+
+    def _default_slice_fraction(self, slice_name: str) -> float:
+        """Return initial slider fraction honouring absolute PRB overrides when present."""
+        try:
+            overrides = RAN_SLICE_DL_PRB_OVERRIDES or {}
+        except Exception:
+            overrides = {}
+        if overrides:
+            max_prb = None
+            try:
+                first_cell = next(iter(self.cell_list.values())) if self.cell_list else None
+                max_prb = getattr(first_cell, "max_dl_prb", None)
+            except Exception:
+                max_prb = None
+            if max_prb:
+                try:
+                    quota = float(overrides.get(slice_name, 0))
+                    return max(0.0, min(1.0, quota / float(max_prb)))
+                except Exception:
+                    pass
+        return float(RAN_SLICE_DL_PRB_SPLIT_DEFAULT.get(slice_name, 0.0))
 
     def step(self):
         """Collect KPIs each simulation step."""
@@ -399,7 +421,7 @@ class xAppLiveKPIDashboard(xAppBase):
                                 min=0,
                                 max=1.0,
                                 step=RAN_SLICE_KNOB_STEP_FRAC,
-                                value=RAN_SLICE_DL_PRB_SPLIT_DEFAULT.get("eMBB", 0.7),
+                                value=self._default_slice_fraction("eMBB"),
                                 tooltip={"always_visible": False},
                             ),
                         ]),
@@ -410,7 +432,7 @@ class xAppLiveKPIDashboard(xAppBase):
                                 min=0,
                                 max=1.0,
                                 step=RAN_SLICE_KNOB_STEP_FRAC,
-                                value=RAN_SLICE_DL_PRB_SPLIT_DEFAULT.get("URLLC", 0.2),
+                                value=self._default_slice_fraction("URLLC"),
                                 tooltip={"always_visible": False},
                             ),
                         ]),
@@ -421,7 +443,7 @@ class xAppLiveKPIDashboard(xAppBase):
                                 min=0,
                                 max=1.0,
                                 step=RAN_SLICE_KNOB_STEP_FRAC,
-                                value=RAN_SLICE_DL_PRB_SPLIT_DEFAULT.get("mMTC", 0.1),
+                                value=self._default_slice_fraction("mMTC"),
                                 tooltip={"always_visible": False},
                             ),
                         ]),

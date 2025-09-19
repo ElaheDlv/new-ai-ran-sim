@@ -150,8 +150,9 @@ Downlink replay and buffering happen at the gNB (Base Station): the BS owns a pe
     - `--trace-raw-map slice:eMBB:path/to/embb.csv:UE_IP`
     - `--trace-raw-map ALL:path/to/trace.csv:UE_IP`
   - `--trace-bin <seconds>` (aggregation bin for raw CSV; default 1.0)
-  - `--trace-overhead-bytes <n>` (subtract per-packet bytes in raw CSV; default 0)
-  - `--trace-loop` (replay traces continuously)
+- `--trace-overhead-bytes <n>` (subtract per-packet bytes in raw CSV; default 0)
+- `--trace-loop` (replay traces continuously)
+- `--slice-prb SLICE=PRBs` (repeatable; sets the initial downlink PRB quota for a slice, e.g. `--slice-prb eMBB=40 --slice-prb URLLC=20`)
 
 Key trace flags (what they do):
 

@@ -2,6 +2,7 @@
 # RAN Configuration
 # ---------------------------
 import os
+import json
 RAN_BS_LOAD_HISTORY_LENGTH = 3
 RAN_BS_REF_SIGNAL_DEFAULT_TRASNMIT_POWER = 40
 
@@ -37,6 +38,18 @@ RAN_SLICE_DL_PRB_SPLIT_DEFAULT = {
     "URLLC": 0.2,
     "mMTC": 0.1,
 }
+
+_prb_override_env = os.getenv("RAN_SLICE_DL_PRB_OVERRIDES", "")
+try:
+    if _prb_override_env:
+        _prb_override_dict = json.loads(_prb_override_env)
+        RAN_SLICE_DL_PRB_OVERRIDES = {
+            str(k): int(float(v)) for k, v in _prb_override_dict.items()
+        }
+    else:
+        RAN_SLICE_DL_PRB_OVERRIDES = {}
+except Exception:
+    RAN_SLICE_DL_PRB_OVERRIDES = {}
 
 # UI knob step for slice split sliders (set small for near‑continuous control)
 RAN_SLICE_KNOB_STEP_FRAC = 0.001

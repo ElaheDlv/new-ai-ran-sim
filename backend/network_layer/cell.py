@@ -171,7 +171,22 @@ class Cell:
             cnt = int(self.max_dl_prb * frac)
             quotas[s] = cnt
             total_assigned += cnt
-        # Ensure no negative and no overflow; if overflow, scale down proportionally
+        # Ensure no negative and no overflow before applying overrides
+        if total_assigned > self.max_dl_prb and total_assigned > 0:
+            scale = self.max_dl_prb / total_assigned
+            for s in list(quotas.keys()):
+                quotas[s] = int(quotas[s] * scale)
+        # Apply absolute overrides if provided
+        try:
+            overrides = getattr(settings, "RAN_SLICE_DL_PRB_OVERRIDES", {})
+        except Exception:
+            overrides = {}
+        for s, val in overrides.items():
+            try:
+                quotas[s] = max(0, int(val))
+            except Exception:
+                continue
+        total_assigned = sum(quotas.values())
         if total_assigned > self.max_dl_prb and total_assigned > 0:
             scale = self.max_dl_prb / total_assigned
             for s in list(quotas.keys()):
