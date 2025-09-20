@@ -260,7 +260,6 @@ if args.trace_raw_map:
         if entry is None:
             continue
         raw_items.append(entry)
-        raw_items.append(entry)
     if raw_items:
         os.environ["TRACE_RAW_MAP_JSON"] = json.dumps(raw_items)
 if args.trace_bin is not None:

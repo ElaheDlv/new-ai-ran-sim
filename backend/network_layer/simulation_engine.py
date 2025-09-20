@@ -34,6 +34,8 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
         self.logs = []
         # cache loaded traces by file path
         self._trace_cache = {}
+        # Track UEs that still need a trace attachment (e.g., awaiting slice info)
+        self._pending_trace_attach = set()
 
     def add_base_station(self, bs):
         assert isinstance(bs, BaseStation)
@@ -61,6 +63,7 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
         self.logs = []
         self.core_network = None
         self.ric = None
+        self._pending_trace_attach.clear()
         logger.info("Network reset complete.")
 
     def network_setup(self):
@@ -141,9 +144,10 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
         self.ue_list[ue.ue_imsi] = ue
         self.global_UE_counter += 1
         # Attach trace if mapped for this IMSI
-        self._attach_trace_if_mapped(ue)
+        if not self._attach_trace_if_mapped(ue):
+            self._pending_trace_attach.add(ue.ue_imsi)
 
-    def _attach_trace_if_mapped(self, ue: UE):
+    def _attach_trace_if_mapped(self, ue: UE) -> bool:
         """Attach a configured raw CSV trace to the given UE, if present.
 
         Flow:
@@ -159,19 +163,22 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
         raw_map = getattr(settings, "TRACE_RAW_MAP", []) or []  # list of dicts
         raw_entry = None
         # Resolution priority: exact IMSI > slice mapping > wildcard ALL
+        ue_imsi = (ue.ue_imsi or "").strip()
         for item in raw_map:
             if not isinstance(item, dict):
                 continue
-            if item.get("imsi") == ue.ue_imsi:
+            imsi_key = (item.get("imsi") or "").strip()
+            if imsi_key and imsi_key == ue_imsi:
                 raw_entry = item
                 break
         if raw_entry is None:
             # Try slice-based rule
+            ue_slice = (getattr(ue, "slice_type", None) or "").strip()
             for item in raw_map:
                 if not isinstance(item, dict):
                     continue
                 sl = (item.get("slice") or "").strip()
-                if sl and sl == getattr(ue, "slice_type", None):
+                if sl and ue_slice and sl.lower() == ue_slice.lower():
                     raw_entry = item
                     break
         if raw_entry is None:
@@ -179,7 +186,8 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
             for item in raw_map:
                 if not isinstance(item, dict):
                     continue
-                if (item.get("imsi") or "").upper() in ("*", "ALL"):
+                imsi_key = (item.get("imsi") or "").strip().upper()
+                if imsi_key in ("*", "ALL"):
                     raw_entry = item
                     break
 
@@ -190,7 +198,7 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
             bin_s = getattr(settings, "TRACE_BIN", 1.0)  # aggregation bin (s)
             overhead = getattr(settings, "TRACE_OVERHEAD_BYTES", 0)  # per-packet subtraction
             if not path:
-                return  # nothing to load
+                return False  # nothing to load
 
             # Cache key so repeated UEs/files don't re-parse the CSV
             cache_key = ("raw", path, ue_ip or "AUTO", float(bin_s))
@@ -226,7 +234,8 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
                         )
                 except Exception as e:
                     logger.error(f"Failed to attach DL trace for {ue.ue_imsi}: {e}")
-            return  # done regardless of success; no other trace types enabled
+                return True
+        return False  # no mapping or failed attachment
 
         # Aggregated CSV mapping is disabled in this configuration; prefer RAW traces only
         return
@@ -363,8 +372,9 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
                 ue, requested_slice=attach_slice
             )
             self.ue_list[ue_imsi] = ue
-            # Attach trace if mapped
-            self._attach_trace_if_mapped(ue)
+            # Attach trace if mapped (or queue for retry)
+            if not self._attach_trace_if_mapped(ue):
+                self._pending_trace_attach.add(ue_imsi)
             logger.info(
                 f"UE {ue_imsi} added and registered at runtime. Subscribed to slices: {subscribed_slices}. Registered on: {attach_slice}"
             )
@@ -393,6 +403,15 @@ class SimulationEngine(metaclass=utils.SingletonMeta):
         # spawn new UEs if needed
         logger.info("Spawning new UEs if needed...")
         self.spawn_UEs()
+
+        # Retry pending trace attachments (e.g., slice-based rules once slice is known)
+        for imsi in list(self._pending_trace_attach):
+            ue = self.ue_list.get(imsi)
+            if ue is None:
+                self._pending_trace_attach.discard(imsi)
+                continue
+            if self._attach_trace_if_mapped(ue):
+                self._pending_trace_attach.discard(imsi)
 
         # move UEs towards their targets, monitor signal quality, report measurement events ...
         logger.info("Stepping through UEs...")
