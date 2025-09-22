@@ -170,12 +170,12 @@ try:
     DQN_PRB_EPSILON_END = float(os.getenv("DQN_PRB_EPSILON_END", "0.1"))
     DQN_PRB_EPSILON_DECAY = int(os.getenv("DQN_PRB_EPSILON_DECAY", "50000"))
     DQN_PRB_GAMMA = float(os.getenv("DQN_PRB_GAMMA", "0.99"))
-    DQN_PRB_LR = float(os.getenv("DQN_PRB_LR", "1e-4"))
+    DQN_PRB_LR = float(os.getenv("DQN_PRB_LR", "1e-2"))
     DQN_PRB_BATCH = int(os.getenv("DQN_PRB_BATCH", "64"))
     DQN_PRB_BUFFER = int(os.getenv("DQN_PRB_BUFFER", "100000"))
 except Exception:
     DQN_PRB_EPSILON_START, DQN_PRB_EPSILON_END, DQN_PRB_EPSILON_DECAY = 1.0, 0.1, 50000
-    DQN_PRB_GAMMA, DQN_PRB_LR, DQN_PRB_BATCH, DQN_PRB_BUFFER = 0.99, 1e-4, 64, 100000
+    DQN_PRB_GAMMA, DQN_PRB_LR, DQN_PRB_BATCH, DQN_PRB_BUFFER = 0.99, 1e-2, 64, 100000
 
 # Reward shaping weights and parameters
 try:

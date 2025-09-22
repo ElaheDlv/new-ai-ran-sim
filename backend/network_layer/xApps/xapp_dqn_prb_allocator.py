@@ -78,14 +78,13 @@ if TORCH_AVAILABLE:
     class _DQN(nn.Module):
         """Small fully‑connected Q‑network.
 
-        Architecture: 2 hidden layers (64 units each, ReLU) → Q‑values.
+        Architecture: single hidden layer (256 units, ReLU) → Q‑values.
         """
         def __init__(self, in_dim: int, n_actions: int):
             super().__init__()
             self.net = nn.Sequential(
-                nn.Linear(in_dim, 64), nn.ReLU(),
-                nn.Linear(64, 64), nn.ReLU(),
-                nn.Linear(64, n_actions),
+                nn.Linear(in_dim, 256), nn.ReLU(),
+                nn.Linear(256, n_actions),
             )
 
         def forward(self, x):
@@ -133,7 +132,7 @@ class xAppDQNPRBAllocator(xAppBase):
 
         # DQN parameters
         self.gamma = float(getattr(settings, "DQN_PRB_GAMMA", 0.99))        # discount factor
-        self.lr = float(getattr(settings, "DQN_PRB_LR", 1e-3))              # learning rate
+        self.lr = float(getattr(settings, "DQN_PRB_LR", 1e-2))              # learning rate
         self.batch = int(getattr(settings, "DQN_PRB_BATCH", 64))             # mini‑batch size
         self.buffer_cap = int(getattr(settings, "DQN_PRB_BUFFER", 50000))    # replay capacity
         self.eps_start = float(getattr(settings, "DQN_PRB_EPSILON_START", 1.0))  # ε start

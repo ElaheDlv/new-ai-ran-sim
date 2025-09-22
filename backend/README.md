@@ -420,7 +420,9 @@ The DQN xApp implements a small DQN agent that observes per‑cell state and app
 
 - State per cell: `[#mMTC UEs, #URLLC UEs, #eMBB UEs, PRBs_mMTC, PRBs_URLLC]` (eMBB PRBs are implied by the total).
 - Actions: `0=keep, 1=mMTC→URLLC, 2=mMTC→eMBB, 3=URLLC→mMTC, 4=URLLC→eMBB, 5=eMBB→mMTC, 6=eMBB→URLLC`.
-- Reward: weighted sum of per‑slice scores (eMBB queue‑drain, URLLC queueing delay proxy, mMTC utilization/idle penalty) normalized to [0,1].
+- Reward: weighted sum of per-slice scores (eMBB queue-drain, URLLC queueing delay proxy, mMTC utilization/idle penalty) normalized to [0,1].
+- State normalization: `backend/network_layer/xApps/xapp_dqn_prb_allocator.py:240` divides the UE counts by `UE_DEFAULT_MAX_COUNT` and slice PRB quotas by the serving cell’s `max_dl_prb`. This mirrors the Tractor paper’s idea of scaling to roughly `[0,1]`, but uses the actual limits from the current simulation instead of the paper’s fixed `10` users and `17` PRBs, so it stays correct if you change the topology.
+- Network/optimizer: both the handcrafted DQN xApp and the SB3 variant use a fully-connected network `5 → 256 → 7` with ReLU and the Adam optimiser at learning rate `0.01`, matching the Tractor paper’s configuration while automatically adjusting to our state/action dimensions.
 
 Enable it at runtime (requires `torch`):
 

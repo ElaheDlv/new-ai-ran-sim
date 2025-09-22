@@ -100,7 +100,7 @@ class xAppSB3DQNPRBAllocator(xAppBase):
 
         # Hyperparameters shared with the PyTorch implementation for easy comparison
         self.gamma = float(getattr(settings, "DQN_PRB_GAMMA", 0.99))
-        self.lr = float(getattr(settings, "DQN_PRB_LR", 1e-3))
+        self.lr = float(getattr(settings, "DQN_PRB_LR", 1e-2))
         self.batch = int(getattr(settings, "DQN_PRB_BATCH", 64))
         self.buffer_cap = int(getattr(settings, "DQN_PRB_BUFFER", 50_000))
         self.eps_start = float(getattr(settings, "DQN_PRB_EPSILON_START", 1.0))
@@ -180,7 +180,7 @@ class xAppSB3DQNPRBAllocator(xAppBase):
 
         self._sb3_env = DummyVecEnv([_make_env])
 
-        policy_kwargs = {"net_arch": [64, 64]}
+        policy_kwargs = {"net_arch": [256]}  # 5×256×7 (single hidden layer) per Tractor paper
         self._model = SB3DQN(
             policy="MlpPolicy",
             env=self._sb3_env,
@@ -216,23 +216,23 @@ class xAppSB3DQNPRBAllocator(xAppBase):
         except Exception as exc:
             print(f"{self.xapp_id}: failed to load SB3 model ({exc}); starting fresh.")
             self._model = SB3DQN(
-                policy="MlpPolicy",
-                env=self._sb3_env,
-                learning_rate=self.lr,
-                buffer_size=self.buffer_cap,
-                learning_starts=0,
-                batch_size=self.batch,
-                gamma=self.gamma,
-                train_freq=1,
-                gradient_steps=1,
-                target_update_interval=max(1, self.sb3_target_update),
-                exploration_fraction=1.0,
-                exploration_initial_eps=self.eps_start,
-                exploration_final_eps=self.eps_end,
-                policy_kwargs=policy_kwargs,
-                verbose=0,
-                tensorboard_log=None,
-            )
+                    policy="MlpPolicy",
+                    env=self._sb3_env,
+                    learning_rate=self.lr,
+                    buffer_size=self.buffer_cap,
+                    learning_starts=0,
+                    batch_size=self.batch,
+                    gamma=self.gamma,
+                    train_freq=1,
+                    gradient_steps=1,
+                    target_update_interval=max(1, self.sb3_target_update),
+                    exploration_fraction=1.0,
+                    exploration_initial_eps=self.eps_start,
+                    exploration_final_eps=self.eps_end,
+                    policy_kwargs=policy_kwargs,
+                    verbose=0,
+                    tensorboard_log=None,
+                )
         try:
             from stable_baselines3.common.logger import configure
 
