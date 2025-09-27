@@ -1,4 +1,4 @@
-time_ms,machine,slice,direction,src_ip,dst_ip,packet_size
+Time,machine,slice,direction,Source,Destination,Length
 11.0,M2,URLLC,DL,192.168.0.1,10.0.0.2,76.02
 11.5,M2,URLLC,DL,192.168.0.1,10.0.0.2,61.43
 13.5,M2,URLLC,DL,192.168.0.1,10.0.0.2,75.84
