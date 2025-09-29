@@ -351,6 +351,37 @@ Tips and knobs:
 - A pre‑trained model can be pointed to with `--dqn-model backend/models/dqn_prb.pt` (this is also the default path); omit `--dqn-train` to run inference only.
 - Use the KPI dashboard with history (`--kpi-history --kpi-log`) to monitor slice PRBs, DL Mbps, buffers, and the effect of PRB moves.
 
+## 📉 LSTM Forecast Plots (Regular vs Irregular)
+
+Use `backend/notebooks/plot_and_predict_runner.py` to train the PyTorch LSTM forecasters on any CSV trace and export comparison plots for both preprocessing modes. The script mirrors the notebook logic, runs regular (1 ms grid) and irregular (Δt + Length) training back-to-back, and saves figures with trace name, epoch count, and mode in the filename.
+
+- Basic run (auto-selects CUDA if available):
+
+  ```bash
+  python backend/notebooks/plot_and_predict_runner.py backend/assets/traces/URLLC_aligned.csv \
+    --epochs 15 --window 20 --output-dir backend/assets/plots
+  ```
+
+- Alternate trace and settings (force CPU, tweak batch size/hidden dim):
+
+  ```bash
+  python backend/notebooks/plot_and_predict_runner.py backend/assets/traces/eMBB_aligned.csv \
+    --epochs 20 --window 30 --batch-size 16 --hidden-dim 128 --device cpu
+  ```
+
+- Multiple traces: run once per file to populate a common folder; each call writes `traceName_epochsX_regular.png` and `traceName_epochsX_irregular.png` with axes labelled in milliseconds and bytes:
+
+  ```bash
+  for trace in backend/assets/traces/URLLC_aligned.csv backend/assets/traces/eMBB_aligned.csv; do
+    python backend/notebooks/plot_and_predict_runner.py "$trace" --epochs 10 --output-dir backend/assets/plots
+  done
+  ```
+
+Options:
+- `--num-layers` to deepen the LSTM.
+- `--device auto|cpu|cuda` to override accelerator selection.
+- `--output-dir` defaults to `plots/` in the repo root if not provided.
+
 
 ## 📊 Live KPI Dashboard xApp
 
