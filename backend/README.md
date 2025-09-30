@@ -351,9 +351,9 @@ Tips and knobs:
 - A pre‑trained model can be pointed to with `--dqn-model backend/models/dqn_prb.pt` (this is also the default path); omit `--dqn-train` to run inference only.
 - Use the KPI dashboard with history (`--kpi-history --kpi-log`) to monitor slice PRBs, DL Mbps, buffers, and the effect of PRB moves.
 
-## 📉 LSTM Forecast Plots (Regular vs Irregular)
+## 📉 LSTM Forecast Plots (Event Histories)
 
-Use `backend/notebooks/plot_and_predict_runner.py` to train the PyTorch LSTM forecasters on any CSV trace and export comparison plots for both preprocessing modes. The script mirrors the notebook logic, runs regular (1 ms grid) and irregular (Δt + Length) training back-to-back, and saves figures with trace name, epoch count, and mode in the filename.
+Use `backend/notebooks/plot_and_predict_runner.py` to train PyTorch LSTM forecasters directly on packet event histories—no resampling. The script now builds padded windows of the last *N* packets, with optional Δt features, and saves comparison plots for “Length-only” vs “Δt+Length” inputs.
 
 - Basic run (auto-selects CUDA if available):
 
@@ -378,6 +378,7 @@ Use `backend/notebooks/plot_and_predict_runner.py` to train the PyTorch LSTM for
   ```
 
 Options:
+- `--window` controls how many past packets feed the model (default 20).
 - `--num-layers` to deepen the LSTM.
 - `--device auto|cpu|cuda` to override accelerator selection.
 - `--output-dir` defaults to `plots/` in the repo root if not provided.

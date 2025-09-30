@@ -1,6 +1,6 @@
 import argparse
 from pathlib import Path
-from typing import Tuple
+from typing import List, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,13 +11,26 @@ from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import DataLoader, TensorDataset
 
 
-def create_dataset(series: np.ndarray, window: int, target_col: int) -> Tuple[np.ndarray, np.ndarray]:
-    """Slide a window over `series` and build (X, y) pairs."""
+def create_event_sequences(
+    series: np.ndarray,
+    window: int,
+    target_idx: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Build padded event-history windows without resampling."""
+
+    feature_dim = series.shape[1]
     X, y = [], []
-    for idx in range(len(series) - window):
-        X.append(series[idx : idx + window])
-        y.append(series[idx + window, target_col])
-    return np.array(X), np.array(y)
+
+    for idx in range(series.shape[0]):
+        start = max(0, idx - window)
+        history = series[start:idx]
+        if history.shape[0] < window:
+            pad = np.zeros((window - history.shape[0], feature_dim), dtype=series.dtype)
+            history = np.vstack((pad, history))
+        X.append(history)
+        y.append(series[idx, target_idx])
+
+    return np.stack(X), np.array(y)
 
 
 class LSTMModel(nn.Module):
@@ -84,6 +97,32 @@ def plot_predictions(
     print(f"Saved plot -> {output_path}")
 
 
+def build_scaled_sequences(
+    df: pd.DataFrame,
+    feature_cols: Sequence[str],
+    window: int,
+) -> Tuple[np.ndarray, np.ndarray, MinMaxScaler]:
+    """Scale selected columns and build padded sequences."""
+
+    scaler = MinMaxScaler()
+    scaled = scaler.fit_transform(df[list(feature_cols)].values.astype(float))
+
+    target_idx = feature_cols.index("Length")
+    X_np, y_np = create_event_sequences(scaled, window=window, target_idx=target_idx)
+    return X_np, y_np, scaler
+
+
+def inverse_length_transform(
+    scaled_values: np.ndarray,
+    scaler: MinMaxScaler,
+    feature_cols: Sequence[str],
+) -> np.ndarray:
+    target_idx = feature_cols.index("Length")
+    data_min = scaler.data_min_[target_idx]
+    data_range = scaler.data_range_[target_idx]
+    return scaled_values * data_range + data_min
+
+
 def run_regular(
     trace_path: Path,
     window: int,
@@ -93,22 +132,20 @@ def run_regular(
     hidden_dim: int,
     num_layers: int,
     output_dir: Path,
+    feature_cols: Sequence[str],
 ) -> None:
     df = pd.read_csv(trace_path)
-    df["Time"] = pd.to_timedelta(df["Time"], unit="ms")
-    df_reg = df.set_index("Time").resample("1ms").mean(numeric_only=True)
-    df_reg["Length"] = df_reg["Length"].interpolate().fillna(method="bfill").fillna(method="ffill")
+    df = df.sort_values("Time").reset_index(drop=True)
+    df["delta_t"] = df["Time"].diff().fillna(0.0)
 
-    scaler = MinMaxScaler()
-    series = scaler.fit_transform(df_reg[["Length"]].values)
+    X_np, y_np, scaler = build_scaled_sequences(df, feature_cols=feature_cols, window=window)
 
-    X_np, y_np = create_dataset(series, window=window, target_col=0)
     X_tensor = torch.tensor(X_np, dtype=torch.float32)
     y_tensor = torch.tensor(y_np, dtype=torch.float32).unsqueeze(-1)
 
     loader = DataLoader(TensorDataset(X_tensor, y_tensor), batch_size=batch_size, shuffle=True)
 
-    model = LSTMModel(input_dim=1, hidden_dim=hidden_dim, num_layers=num_layers)
+    model = LSTMModel(input_dim=len(feature_cols), hidden_dim=hidden_dim, num_layers=num_layers)
     train_model(model, loader, epochs=epochs, device=device)
 
     model.eval()
@@ -116,58 +153,22 @@ def run_regular(
         preds = model(X_tensor.to(device)).cpu().numpy()
     y_true = y_tensor.numpy()
 
-    preds = scaler.inverse_transform(preds)
-    y_true = scaler.inverse_transform(y_true)
+    preds = inverse_length_transform(preds.squeeze(), scaler, feature_cols)
+    y_true = inverse_length_transform(y_true.squeeze(), scaler, feature_cols)
 
-    time_axis = (df_reg.index[window:].total_seconds() * 1e3).astype(float)
-    title = f"Regular - {trace_path.stem} - {epochs} epochs"
-    output_path = output_dir / f"{trace_path.stem}_epochs{epochs}_regular.png"
-    plot_predictions(time_axis, y_true.squeeze(), preds.squeeze(), title, output_path, is_irregular=False)
+    time_axis = df["Time"].values.astype(float)
+    feature_tag = "_".join(feature_cols).lower()
+    title = f"Event-Seq ({' + '.join(feature_cols)}) - {trace_path.stem} - {epochs} epochs"
+    output_path = output_dir / f"{trace_path.stem}_epochs{epochs}_{feature_tag}.png"
+    plot_predictions(time_axis, y_true, preds, title, output_path, is_irregular="delta_t" in feature_cols)
 
 
 def run_irregular(
-    trace_path: Path,
-    window: int,
-    epochs: int,
-    batch_size: int,
-    device: torch.device,
-    hidden_dim: int,
-    num_layers: int,
-    output_dir: Path,
+    *args,
+    **kwargs,
 ) -> None:
-    df = pd.read_csv(trace_path)
-    df["delta_t"] = df["Time"].diff().fillna(0.0)
-
-    scaler = MinMaxScaler()
-    series = scaler.fit_transform(df[["delta_t", "Length"]].values)
-
-    X_np, y_np = create_dataset(series, window=window, target_col=1)
-    X_tensor = torch.tensor(X_np, dtype=torch.float32)
-    y_tensor = torch.tensor(y_np, dtype=torch.float32).unsqueeze(-1)
-
-    loader = DataLoader(TensorDataset(X_tensor, y_tensor), batch_size=batch_size, shuffle=True)
-
-    model = LSTMModel(input_dim=2, hidden_dim=hidden_dim, num_layers=num_layers)
-    train_model(model, loader, epochs=epochs, device=device)
-
-    model.eval()
-    with torch.no_grad():
-        preds = model(X_tensor.to(device)).cpu().numpy()
-
-    y_true = y_tensor.numpy()
-
-    preds_full = np.zeros((len(preds), 2), dtype=float)
-    preds_full[:, 1] = preds[:, 0]
-    y_true_full = np.zeros((len(y_true), 2), dtype=float)
-    y_true_full[:, 1] = y_true[:, 0]
-
-    preds = scaler.inverse_transform(preds_full)[:, 1]
-    y_true = scaler.inverse_transform(y_true_full)[:, 1]
-
-    time_axis = df["Time"].values[window:].astype(float)
-    title = f"Irregular - {trace_path.stem} - {epochs} epochs"
-    output_path = output_dir / f"{trace_path.stem}_epochs{epochs}_irregular.png"
-    plot_predictions(time_axis, y_true, preds, title, output_path, is_irregular=True)
+    # Backward compatibility shim – calls run_regular with delta_t included
+    return run_regular(*args, feature_cols=("delta_t", "Length"), **kwargs)
 
 
 def parse_args() -> argparse.Namespace:
@@ -219,6 +220,7 @@ def main() -> None:
         hidden_dim=args.hidden_dim,
         num_layers=args.num_layers,
         output_dir=output_dir,
+        feature_cols=("Length",),
     )
 
     run_irregular(

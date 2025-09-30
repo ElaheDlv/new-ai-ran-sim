@@ -27,6 +27,8 @@ from datetime import datetime
 
 import settings  # global configuration and constants
 
+import numpy as np
+
 try:  # torch is optional; the xApp disables itself if not available
     import torch
     import torch.nn as nn
@@ -88,7 +90,28 @@ if TORCH_AVAILABLE:
             )
 
         def forward(self, x):
+            if x.dim() == 3:
+                x = x[:, -1, :]
             return self.net(x)
+
+
+    class _LSTMDQN(nn.Module):
+        """LSTM encoder followed by fully connected head for Q-values."""
+
+        def __init__(self, in_dim: int, n_actions: int, hidden_dim: int = 128):
+            super().__init__()
+            self.lstm = nn.LSTM(in_dim, hidden_dim, batch_first=True)
+            self.head = nn.Sequential(
+                nn.Linear(hidden_dim, 128), nn.ReLU(),
+                nn.Linear(128, n_actions),
+            )
+
+        def forward(self, x):
+            if x.dim() == 2:
+                x = x.unsqueeze(1)
+            out, _ = self.lstm(x)
+            last = out[:, -1, :]
+            return self.head(last)
 else:
     # Placeholders to avoid NameError if referenced in disabled code paths
     _ReplayBuffer = None
@@ -145,6 +168,8 @@ class xAppDQNPRBAllocator(xAppBase):
         self._per_cell_prev = {}  # cell_id -> {state, action} for previous decision
         self._last_loss = None    # last training loss (for TB/W&B)
         self._action_counts = defaultdict(int)  # histogram of actions taken
+        self.seq_len = max(1, int(getattr(settings, "DQN_PRB_SEQ_LEN", 1)))
+        self._state_history = defaultdict(lambda: deque(maxlen=self.seq_len))
 
         # NN
         self._n_actions = 7  # size of the discrete action space
@@ -159,8 +184,12 @@ class xAppDQNPRBAllocator(xAppBase):
         self._wandb = None  # Weights & Biases run object (optional)
         if self.enabled:
             os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
-            self._q = _DQN(self._state_dim, self._n_actions).to(self._device)          # online network
-            self._q_target = _DQN(self._state_dim, self._n_actions).to(self._device)   # target network
+            if self.seq_len > 1:
+                self._q = _LSTMDQN(self._state_dim, self._n_actions).to(self._device)
+                self._q_target = _LSTMDQN(self._state_dim, self._n_actions).to(self._device)
+            else:
+                self._q = _DQN(self._state_dim, self._n_actions).to(self._device)
+                self._q_target = _DQN(self._state_dim, self._n_actions).to(self._device)
             self._q_target.load_state_dict(self._q.state_dict())
             self._opt = optim.Adam(self._q.parameters(), lr=self.lr)  # optimizer
             self._buf = _ReplayBuffer(self.buffer_cap)                 # replay buffer
@@ -258,6 +287,15 @@ class xAppDQNPRBAllocator(xAppBase):
             prb_u / float(max(1, cell.max_dl_prb)),
         ]
         return s
+
+    def _update_state_sequence(self, cell_id: str, state_vec):
+        hist = self._state_history[cell_id]
+        hist.append(np.array(state_vec, dtype=np.float32))
+        seq = np.zeros((self.seq_len, self._state_dim), dtype=np.float32)
+        h_list = list(hist)
+        if h_list:
+            seq[-len(h_list):] = h_list
+        return seq
 
     def _aggregate_slice_metrics(self, cell):
         """Return per-slice aggregates used to compute rewards.
@@ -465,12 +503,13 @@ class xAppDQNPRBAllocator(xAppBase):
         for cell_id, cell in self.cell_list.items():
             # Compute state now (after environment step allocated PRBs)
             s_now = self._get_state(cell)
+            seq_now = self._update_state_sequence(cell_id, s_now)
 
             # If we have a pending (s,a) from previous decision, compute reward and push transition
             prev = self._per_cell_prev.get(cell_id)
             if prev is not None:
                 r = self._reward(cell, T_s)
-                self._buf.push(prev["state"], prev["action"], r, s_now, 0.0)
+                self._buf.push(prev["seq"], prev["action"], r, seq_now, 0.0)
                 loss = self._opt_step()
                 if loss is not None:
                     self._last_loss = loss
@@ -496,9 +535,9 @@ class xAppDQNPRBAllocator(xAppBase):
                 })
 
             # Choose and apply new action for next period
-            a = self._act(s_now)
+            a = self._act(seq_now)
             self._apply_action(cell, a)
-            self._per_cell_prev[cell_id] = {"state": s_now, "action": a}
+            self._per_cell_prev[cell_id] = {"seq": seq_now.copy(), "action": a}
 
         # Log action histogram occasionally
         if self._tb is not None and self._t % 50 == 0:
