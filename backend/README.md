@@ -353,7 +353,7 @@ Tips and knobs:
 
 ## 📉 LSTM Forecast Plots (Event Histories)
 
-Use `backend/notebooks/plot_and_predict_runner.py` to train PyTorch LSTM forecasters directly on packet event histories—no resampling. The script now builds padded windows of the last *N* packets, with optional Δt features, and saves comparison plots for “Length-only” vs “Δt+Length” inputs.
+Use `backend/notebooks/plot_and_predict_runner.py` to train PyTorch LSTM forecasters directly on packet event histories—no resampling. Each sample contains the last *N* packets (zero-padded when the history is shorter) so no arrivals are lost. You can choose which per-packet features to expose (e.g., `Length` only, or `Δt + Length`) or even force a uniform time grid (auto-detected minimum gap) via `--feature-sets`.
 
 - Basic run (auto-selects CUDA if available):
 
@@ -366,9 +366,14 @@ Use `backend/notebooks/plot_and_predict_runner.py` to train PyTorch LSTM forecas
 
   ```bash
   python backend/notebooks/plot_and_predict_runner.py backend/assets/traces/eMBB_aligned.csv \
-    --epochs 20 --window 30 --batch-size 16 --hidden-dim 128 --device cpu
+    --epochs 20 --window 30 --batch-size 16 --hidden-dim 128 --feature-sets length --device cpu
   ```
-
+- If we want to use all three methods:
+  ```bash
+    python backend/notebooks/plot_and_predict_runner.py backend/assets/traces/URLLC_aligned.csv \
+  --epochs 15 --window 20 --output-dir backend/assets/plots \
+  --feature-sets length delta_t+length uniform-length
+  ```
 - Multiple traces: run once per file to populate a common folder; each call writes `traceName_epochsX_regular.png` and `traceName_epochsX_irregular.png` with axes labelled in milliseconds and bytes:
 
   ```bash
@@ -379,9 +384,15 @@ Use `backend/notebooks/plot_and_predict_runner.py` to train PyTorch LSTM forecas
 
 Options:
 - `--window` controls how many past packets feed the model (default 20).
+- `--feature-sets` accepts one or more of `{length, delta_t+length, uniform-length}`.
+  - `length`: raw event history, `Length` feature only (sequence padding handles gaps).
+  - `delta_t+length`: raw event history with an extra `Δt` channel so the model learns inter-arrival spacing explicitly.
+  - `uniform-length`: detects the smallest positive `Δt`, expands the trace onto that uniform grid with zero-filled missing slots, then trains on `Length` alone (useful if you want explicitly time-aligned samples).
 - `--num-layers` to deepen the LSTM.
-- `--device auto|cpu|cuda` to override accelerator selection.
+- `--device auto|cpu|cuda` to override accelerator selection (use `cpu` if GPU memory is tight).
 - `--output-dir` defaults to `plots/` in the repo root if not provided.
+
+These same padded histories drive the optional LSTM-enabled PRB allocator: set `DQN_PRB_SEQ_LEN` (>1) in `settings` to let the RL agent observe the last *N* decision states. Reduce the value or run on CPU if sequence processing becomes too heavy.
 
 
 ## 📊 Live KPI Dashboard xApp

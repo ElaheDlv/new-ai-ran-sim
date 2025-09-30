@@ -1,6 +1,6 @@
 import argparse
 from pathlib import Path
-from typing import List, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,6 +9,13 @@ import torch
 import torch.nn as nn
 from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import DataLoader, TensorDataset
+
+
+FEATURE_SETS: Dict[str, Dict[str, Sequence[str]]] = {
+    "length": {"columns": ("Length",), "mode": "event"},
+    "delta_t+length": {"columns": ("delta_t", "Length"), "mode": "event"},
+    "uniform-length": {"columns": ("Length",), "mode": "uniform"},
+}
 
 
 def create_event_sequences(
@@ -105,11 +112,12 @@ def build_scaled_sequences(
     """Scale selected columns and build padded sequences."""
 
     scaler = MinMaxScaler()
-    scaled = scaler.fit_transform(df[list(feature_cols)].values.astype(float))
+    values = df[list(feature_cols)].values.astype(np.float32)
+    scaled = scaler.fit_transform(values).astype(np.float32)
 
     target_idx = feature_cols.index("Length")
     X_np, y_np = create_event_sequences(scaled, window=window, target_idx=target_idx)
-    return X_np, y_np, scaler
+    return X_np.astype(np.float32), y_np.astype(np.float32), scaler
 
 
 def inverse_length_transform(
@@ -123,8 +131,30 @@ def inverse_length_transform(
     return scaled_values * data_range + data_min
 
 
-def run_regular(
+def predict_in_batches(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+) -> Tuple[np.ndarray, np.ndarray]:
+    preds: List[torch.Tensor] = []
+    targets: List[torch.Tensor] = []
+    model.eval()
+    with torch.no_grad():
+        for xb, yb in loader:
+            xb = xb.to(device)
+            preds.append(model(xb).cpu())
+            targets.append(yb.cpu())
+    pred_cat = torch.cat(preds, dim=0)
+    target_cat = torch.cat(targets, dim=0)
+    return pred_cat.numpy().squeeze(-1), target_cat.numpy().squeeze(-1)
+
+
+def train_feature_set(
+    df_event: pd.DataFrame,
     trace_path: Path,
+    feature_cols: Sequence[str],
+    feature_tag: str,
+    mode: str,
     window: int,
     epochs: int,
     batch_size: int,
@@ -132,43 +162,83 @@ def run_regular(
     hidden_dim: int,
     num_layers: int,
     output_dir: Path,
-    feature_cols: Sequence[str],
 ) -> None:
-    df = pd.read_csv(trace_path)
-    df = df.sort_values("Time").reset_index(drop=True)
-    df["delta_t"] = df["Time"].diff().fillna(0.0)
+    if "Length" not in feature_cols:
+        raise ValueError("Feature set must include 'Length'.")
 
-    X_np, y_np, scaler = build_scaled_sequences(df, feature_cols=feature_cols, window=window)
+    if mode == "uniform":
+        df_prepared = build_uniform_dataframe(df_event)
+    else:
+        df_prepared = df_event
+
+    X_np, y_np, scaler = build_scaled_sequences(df_prepared, feature_cols=feature_cols, window=window)
 
     X_tensor = torch.tensor(X_np, dtype=torch.float32)
     y_tensor = torch.tensor(y_np, dtype=torch.float32).unsqueeze(-1)
 
-    loader = DataLoader(TensorDataset(X_tensor, y_tensor), batch_size=batch_size, shuffle=True)
+    dataset = TensorDataset(X_tensor, y_tensor)
+    train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    eval_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
     model = LSTMModel(input_dim=len(feature_cols), hidden_dim=hidden_dim, num_layers=num_layers)
-    train_model(model, loader, epochs=epochs, device=device)
+    train_model(model, train_loader, epochs=epochs, device=device)
 
-    model.eval()
-    with torch.no_grad():
-        preds = model(X_tensor.to(device)).cpu().numpy()
-    y_true = y_tensor.numpy()
+    preds, y_true = predict_in_batches(model, eval_loader, device=device)
 
-    preds = inverse_length_transform(preds.squeeze(), scaler, feature_cols)
-    y_true = inverse_length_transform(y_true.squeeze(), scaler, feature_cols)
+    preds = inverse_length_transform(preds, scaler, feature_cols)
+    y_true = inverse_length_transform(y_true, scaler, feature_cols)
 
-    time_axis = df["Time"].values.astype(float)
-    feature_tag = "_".join(feature_cols).lower()
-    title = f"Event-Seq ({' + '.join(feature_cols)}) - {trace_path.stem} - {epochs} epochs"
+    time_axis = df_prepared["Time"].values.astype(float)
+    title = f"Seq ({' + '.join(feature_cols)}) [{mode}] - {trace_path.stem} - {epochs} epochs"
     output_path = output_dir / f"{trace_path.stem}_epochs{epochs}_{feature_tag}.png"
     plot_predictions(time_axis, y_true, preds, title, output_path, is_irregular="delta_t" in feature_cols)
 
 
-def run_irregular(
-    *args,
-    **kwargs,
-) -> None:
-    # Backward compatibility shim – calls run_regular with delta_t included
-    return run_regular(*args, feature_cols=("delta_t", "Length"), **kwargs)
+def load_trace(trace_path: Path) -> pd.DataFrame:
+    df = pd.read_csv(trace_path)
+    df = df.sort_values("Time").reset_index(drop=True)
+    if "delta_t" not in df.columns:
+        df["delta_t"] = df["Time"].diff().fillna(0.0)
+    return df
+
+
+def build_uniform_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Expand the event stream onto a uniform grid based on the smallest Δt."""
+
+    if df.empty:
+        return df.copy()
+
+    time_vals = df["Time"].astype(float).to_numpy()
+    deltas = np.diff(time_vals)
+    positive_deltas = deltas[deltas > 0]
+    if positive_deltas.size == 0:
+        min_gap = 1.0
+    else:
+        min_gap = positive_deltas.min()
+
+    if min_gap <= 0:
+        min_gap = 1.0
+
+    start = float(time_vals[0])
+    stop = float(time_vals[-1])
+    steps = int(np.floor((stop - start) / min_gap)) + 1
+
+    if steps > 2_000_000:
+        raise RuntimeError(
+            f"Uniform resampling would create {steps} steps; increase window or filter trace first."
+        )
+
+    grid = start + np.arange(steps) * min_gap
+    length_series = np.zeros_like(grid)
+
+    for t, length in zip(time_vals, df["Length"].to_numpy(dtype=float)):
+        idx = int(round((t - start) / min_gap))
+        if 0 <= idx < steps:
+            length_series[idx] += length
+
+    uniform_df = pd.DataFrame({"Time": grid, "Length": length_series})
+    uniform_df["delta_t"] = min_gap
+    return uniform_df
 
 
 def parse_args() -> argparse.Namespace:
@@ -192,6 +262,13 @@ def parse_args() -> argparse.Namespace:
         default=Path("plots"),
         help="Directory to store generated plots.",
     )
+    parser.add_argument(
+        "--feature-sets",
+        nargs="+",
+        default=["length", "delta_t+length"],
+        choices=sorted(FEATURE_SETS.keys()),
+        help="One or more feature sets to train (default: length and delta_t+length).",
+    )
     return parser.parse_args()
 
 
@@ -211,28 +288,27 @@ def main() -> None:
     output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    run_regular(
-        trace_path=args.trace,
-        window=args.window,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        device=device,
-        hidden_dim=args.hidden_dim,
-        num_layers=args.num_layers,
-        output_dir=output_dir,
-        feature_cols=("Length",),
-    )
+    df_event = load_trace(args.trace)
 
-    run_irregular(
-        trace_path=args.trace,
-        window=args.window,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        device=device,
-        hidden_dim=args.hidden_dim,
-        num_layers=args.num_layers,
-        output_dir=output_dir,
-    )
+    for feature_name in args.feature_sets:
+        config = FEATURE_SETS[feature_name]
+        cols = config["columns"]
+        mode = config.get("mode", "event")
+        print(f"Training feature set '{feature_name}' ({mode}) -> {cols}")
+        train_feature_set(
+            df_event=df_event,
+            trace_path=args.trace,
+            feature_cols=cols,
+            feature_tag=feature_name.replace("+", "_").replace(" ", ""),
+            mode=mode,
+            window=args.window,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            device=device,
+            hidden_dim=args.hidden_dim,
+            num_layers=args.num_layers,
+            output_dir=output_dir,
+        )
 
 
 if __name__ == "__main__":
