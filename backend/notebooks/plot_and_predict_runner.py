@@ -221,12 +221,13 @@ def build_uniform_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     start = float(time_vals[0])
     stop = float(time_vals[-1])
-    steps = int(np.floor((stop - start) / min_gap)) + 1
+    total_span = max(stop - start, min_gap)
+    max_steps = 2_000_000
 
-    if steps > 2_000_000:
-        raise RuntimeError(
-            f"Uniform resampling would create {steps} steps; increase window or filter trace first."
-        )
+    steps = int(np.floor(total_span / min_gap)) + 1
+    if steps > max_steps:
+        min_gap = total_span / max_steps
+        steps = max_steps + 1
 
     grid = start + np.arange(steps) * min_gap
     length_series = np.zeros_like(grid)

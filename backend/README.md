@@ -388,6 +388,7 @@ Options:
   - `length`: raw event history, `Length` feature only (sequence padding handles gaps).
   - `delta_t+length`: raw event history with an extra `Δt` channel so the model learns inter-arrival spacing explicitly.
   - `uniform-length`: detects the smallest positive `Δt`, expands the trace onto that uniform grid with zero-filled missing slots, then trains on `Length` alone (useful if you want explicitly time-aligned samples).
+    - If a trace contains extremely fine jitter, the script caps the grid to ~2M points by relaxing the detected gap so training stays tractable.
 - `--num-layers` to deepen the LSTM.
 - `--device auto|cpu|cuda` to override accelerator selection (use `cpu` if GPU memory is tight).
 - `--output-dir` defaults to `plots/` in the repo root if not provided.
