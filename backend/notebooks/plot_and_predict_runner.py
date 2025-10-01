@@ -61,20 +61,17 @@ class LSTMModel(nn.Module):
         hidden_dim: int = 64,
         num_layers: int = 1,
         dropout: float = 0.0,
-        bidirectional: bool = False,
         fc_hidden: int | None = None,
     ) -> None:
         super().__init__()
-        self.bidirectional = bidirectional
         self.lstm = nn.LSTM(
             input_dim,
             hidden_dim,
             num_layers,
             batch_first=True,
             dropout=dropout if num_layers > 1 else 0.0,
-            bidirectional=bidirectional,
         )
-        lstm_out_dim = hidden_dim * (2 if bidirectional else 1)
+        lstm_out_dim = hidden_dim
         if fc_hidden:
             self.head = nn.Sequential(
                 nn.Linear(lstm_out_dim, fc_hidden),
@@ -227,7 +224,6 @@ def train_feature_set(
     hidden_dim: int,
     num_layers: int,
     dropout: float,
-    bidirectional: bool,
     fc_hidden: int | None,
     include_pad_mask: bool,
     target_mode: str,
@@ -306,7 +302,6 @@ def train_feature_set(
         hidden_dim=hidden_dim,
         num_layers=num_layers,
         dropout=dropout,
-        bidirectional=bidirectional,
         fc_hidden=fc_hidden,
     )
 
@@ -482,7 +477,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hidden-dim", type=int, default=64, help="Hidden dimension of the LSTM.")
     parser.add_argument("--num-layers", type=int, default=1, help="Number of LSTM layers.")
     parser.add_argument("--dropout", type=float, default=0.0, help="Dropout between LSTM layers (applies when num_layers>1).")
-    parser.add_argument("--bidirectional", action="store_true", help="Use a bidirectional LSTM.")
     parser.add_argument("--fc-hidden", type=int, default=None, help="Optional hidden units for an extra fully-connected layer after the LSTM.")
     parser.add_argument("--include-pad-mask", action="store_true", help="Append a padding-mask channel for event-mode sequences (helps the model distinguish real zeros from left-padding).")
     parser.add_argument("--target-mode", type=str, default="raw", choices=("raw", "scaled", "log"), help="How to transform the prediction target: raw bytes, min-max scaled, or log1p.")
@@ -552,7 +546,6 @@ def main() -> None:
             hidden_dim=args.hidden_dim,
             num_layers=args.num_layers,
             dropout=args.dropout,
-            bidirectional=args.bidirectional,
             fc_hidden=args.fc_hidden,
             include_pad_mask=args.include_pad_mask,
             target_mode=args.target_mode,

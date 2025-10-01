@@ -395,7 +395,7 @@ Options:
   - `length`: raw event history, `Length` feature only (sequence padding handles gaps).
   - `delta_t+length`: raw event history with an extra `Δt` channel so the model learns inter-arrival spacing explicitly.
   - `uniform-length`: expands the trace onto a uniform grid using roughly the 5th percentile of observed Δt (protects against tiny jitter), zero-fills missing slots, then trains on `Length` alone. The step size is further relaxed if the grid would exceed ~2M points so training stays tractable.
-- Model capacity knobs: `--hidden-dim`, `--num-layers`, `--dropout`, `--bidirectional`, and `--fc-hidden` (adds an additional dense layer after the LSTM) help capture bursty traffic when the defaults underfit.
+- Model capacity knobs: `--hidden-dim`, `--num-layers`, `--dropout`, and `--fc-hidden` (adds an additional dense layer after the LSTM) help capture bursty traffic when the defaults underfit.
 - Training behaviour knobs: choose the target space (`--target-mode raw|scaled|log`), optionally append a padding mask (`--include-pad-mask`), pick the loss (`--loss` + `--huber-delta`), rebalance zeros (`--zero-weight`), clip gradients (`--clip-grad`), and control validation (`--val-ratio`, `--early-stop`, `--plateau-patience`).
 - `--device auto|cpu|cuda` to override accelerator selection (use `cpu` if GPU memory is tight).
 - `--output-dir` defaults to `plots/` in the repo root if not provided.
