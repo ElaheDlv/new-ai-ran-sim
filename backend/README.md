@@ -380,6 +380,12 @@ Use `backend/notebooks/plot_and_predict_runner.py` to train PyTorch LSTM forecas
   --zero-weight 0.3 --val-ratio 0.1 --early-stop 10 --plateau-patience 5 --clip-grad 1.0
 
 
+python backend/notebooks/prev_plot_and_predict_runner.py backend/assets/traces/eMBB_M3_aligned_trace.csv \
+  --feature-sets length delta_t+length uniform-length \
+  --window 128 --hidden-dim 256 --num-layers 2 \
+  --val-ratio 0.1 --early-stop 10 --epochs 80 --batch-size 64
+
+
   ```
 - Multiple traces: run once per file to populate a common folder; each call writes `traceName_epochsX_regular.png` and `traceName_epochsX_irregular.png` with axes labelled in milliseconds and bytes:
 

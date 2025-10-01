@@ -54,19 +54,27 @@ class LSTMModel(nn.Module):
 
 def train_model(
     model: nn.Module,
-    loader: DataLoader,
+    train_loader: DataLoader,
+    val_loader: DataLoader | None,
     epochs: int,
     device: torch.device,
     lr: float = 1e-3,
-) -> None:
+    patience: int = 0,
+) -> Tuple[List[float], List[float]]:
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     model.to(device)
 
+    train_history: List[float] = []
+    val_history: List[float] = []
+    best_val = float("inf")
+    best_state = None
+    wait = 0
+
     for epoch in range(epochs):
         model.train()
         epoch_loss = 0.0
-        for xb, yb in loader:
+        for xb, yb in train_loader:
             xb = xb.to(device)
             yb = yb.to(device)
 
@@ -79,8 +87,61 @@ def train_model(
 
             epoch_loss += loss.item()
 
-        epoch_loss /= max(1, len(loader))
-        print(f"Epoch {epoch + 1}/{epochs} - Loss: {epoch_loss:.6f}")
+        epoch_loss /= max(1, len(train_loader))
+        train_history.append(epoch_loss)
+
+        if val_loader is not None:
+            model.eval()
+            val_loss = 0.0
+            with torch.no_grad():
+                for xb, yb in val_loader:
+                    xb = xb.to(device)
+                    yb = yb.to(device)
+                    preds = model(xb)
+                    loss = criterion(preds, yb)
+                    val_loss += loss.item()
+            val_loss /= max(1, len(val_loader))
+            val_history.append(val_loss)
+            print(
+                f"Epoch {epoch + 1}/{epochs} - train_loss={epoch_loss:.6f} val_loss={val_loss:.6f}"
+            )
+
+            if val_loss < best_val - 1e-6:
+                best_val = val_loss
+                best_state = {k: v.cpu() for k, v in model.state_dict().items()}
+                wait = 0
+            else:
+                wait += 1
+                if patience > 0 and wait >= patience:
+                    print("Early stopping triggered.")
+                    break
+        else:
+            print(f"Epoch {epoch + 1}/{epochs} - train_loss={epoch_loss:.6f}")
+
+    if best_state is not None:
+        model.load_state_dict(best_state)
+
+    return train_history, val_history
+
+
+def plot_loss_curves(
+    train_history: List[float],
+    val_history: List[float],
+    title: str,
+    output_path: Path,
+) -> None:
+    plt.figure(figsize=(8, 4))
+    epochs_range = range(1, len(train_history) + 1)
+    plt.plot(epochs_range, train_history, label="Train")
+    if val_history:
+        plt.plot(range(1, len(val_history) + 1), val_history, label="Val")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title(title)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
 
 
 def plot_predictions(
@@ -161,6 +222,8 @@ def train_feature_set(
     device: torch.device,
     hidden_dim: int,
     num_layers: int,
+    val_ratio: float,
+    patience: int,
     output_dir: Path,
 ) -> None:
     if "Length" not in feature_cols:
@@ -176,12 +239,35 @@ def train_feature_set(
     X_tensor = torch.tensor(X_np, dtype=torch.float32)
     y_tensor = torch.tensor(y_np, dtype=torch.float32).unsqueeze(-1)
 
-    dataset = TensorDataset(X_tensor, y_tensor)
-    train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    eval_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    n_samples = X_tensor.size(0)
+    split_idx = n_samples
+    val_loader = None
+    train_loader = None
+
+    if val_ratio > 0.0:
+        val_ratio = float(np.clip(val_ratio, 0.0, 0.5))
+        split_idx = max(1, int(n_samples * (1 - val_ratio)))
+        val_dataset = TensorDataset(X_tensor[split_idx:], y_tensor[split_idx:])
+        if len(val_dataset) > 0:
+            val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+    train_dataset = TensorDataset(X_tensor[:split_idx], y_tensor[:split_idx])
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    eval_dataset = TensorDataset(X_tensor, y_tensor)
+    eval_loader = DataLoader(eval_dataset, batch_size=batch_size, shuffle=False)
 
     model = LSTMModel(input_dim=len(feature_cols), hidden_dim=hidden_dim, num_layers=num_layers)
-    train_model(model, train_loader, epochs=epochs, device=device)
+    train_hist, val_hist = train_model(
+        model,
+        train_loader,
+        val_loader,
+        epochs=epochs,
+        device=device,
+        patience=patience,
+    )
+
+    loss_plot = output_dir / f"{trace_path.stem}_loss_{feature_tag}.png"
+    plot_loss_curves(train_hist, val_hist, f"Loss - {trace_path.stem} [{feature_tag}]", loss_plot)
 
     preds, y_true = predict_in_batches(model, eval_loader, device=device)
 
@@ -250,6 +336,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=32, help="Mini-batch size.")
     parser.add_argument("--hidden-dim", type=int, default=64, help="Hidden dimension of the LSTM.")
     parser.add_argument("--num-layers", type=int, default=1, help="Number of LSTM layers.")
+    parser.add_argument("--val-ratio", type=float, default=0.1, help="Fraction of samples used for validation (chronological split).")
+    parser.add_argument("--early-stop", type=int, default=0, help="Early stopping patience based on validation loss (0 disables).")
     parser.add_argument(
         "--device",
         type=str,
@@ -308,6 +396,8 @@ def main() -> None:
             device=device,
             hidden_dim=args.hidden_dim,
             num_layers=args.num_layers,
+            val_ratio=args.val_ratio,
+            patience=args.early_stop,
             output_dir=output_dir,
         )
 
