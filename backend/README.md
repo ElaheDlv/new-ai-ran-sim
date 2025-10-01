@@ -373,6 +373,13 @@ Use `backend/notebooks/plot_and_predict_runner.py` to train PyTorch LSTM forecas
     python backend/notebooks/plot_and_predict_runner.py backend/assets/traces/URLLC_aligned.csv \
   --epochs 15 --window 20 --output-dir backend/assets/plots \
   --feature-sets length delta_t+length uniform-length
+
+  python backend/notebooks/plot_and_predict_runner.py backend/assets/traces/eMBB_M3_aligned_trace.csv \
+  --window 128 --hidden-dim 256 --num-layers 2 --dropout 0.2 --fc-hidden 128 \
+  --include-pad-mask --use-log-target --loss huber --huber-delta 2.0 \
+  --zero-weight 0.3 --val-ratio 0.1 --early-stop 10 --plateau-patience 5 --clip-grad 1.0
+
+
   ```
 - Multiple traces: run once per file to populate a common folder; each call writes `traceName_epochsX_regular.png` and `traceName_epochsX_irregular.png` with axes labelled in milliseconds and bytes:
 
@@ -389,6 +396,7 @@ Options:
   - `delta_t+length`: raw event history with an extra `Δt` channel so the model learns inter-arrival spacing explicitly.
   - `uniform-length`: expands the trace onto a uniform grid using roughly the 5th percentile of observed Δt (protects against tiny jitter), zero-fills missing slots, then trains on `Length` alone. The step size is further relaxed if the grid would exceed ~2M points so training stays tractable.
 - Model capacity knobs: `--hidden-dim`, `--num-layers`, `--dropout`, `--bidirectional`, and `--fc-hidden` (adds an additional dense layer after the LSTM) help capture bursty traffic when the defaults underfit.
+- Training behaviour knobs: choose the target space (`--target-mode raw|scaled|log`), optionally append a padding mask (`--include-pad-mask`), pick the loss (`--loss` + `--huber-delta`), rebalance zeros (`--zero-weight`), clip gradients (`--clip-grad`), and control validation (`--val-ratio`, `--early-stop`, `--plateau-patience`).
 - `--device auto|cpu|cuda` to override accelerator selection (use `cpu` if GPU memory is tight).
 - `--output-dir` defaults to `plots/` in the repo root if not provided.
 
