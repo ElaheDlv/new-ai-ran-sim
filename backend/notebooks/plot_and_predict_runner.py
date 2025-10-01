@@ -41,15 +41,39 @@ def create_event_sequences(
 
 
 class LSTMModel(nn.Module):
-    def __init__(self, input_dim: int, hidden_dim: int = 64, num_layers: int = 1) -> None:
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dim: int = 64,
+        num_layers: int = 1,
+        dropout: float = 0.0,
+        bidirectional: bool = False,
+        fc_hidden: int | None = None,
+    ) -> None:
         super().__init__()
-        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_dim, 1)
+        self.bidirectional = bidirectional
+        self.lstm = nn.LSTM(
+            input_dim,
+            hidden_dim,
+            num_layers,
+            batch_first=True,
+            dropout=dropout if num_layers > 1 else 0.0,
+            bidirectional=bidirectional,
+        )
+        lstm_out_dim = hidden_dim * (2 if bidirectional else 1)
+        if fc_hidden:
+            self.head = nn.Sequential(
+                nn.Linear(lstm_out_dim, fc_hidden),
+                nn.ReLU(),
+                nn.Linear(fc_hidden, 1),
+            )
+        else:
+            self.head = nn.Linear(lstm_out_dim, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out, _ = self.lstm(x)
-        out = self.fc(out[:, -1, :])  # take final time step
-        return out
+        last = out[:, -1, :]
+        return self.head(last)
 
 
 def train_model(
@@ -161,6 +185,9 @@ def train_feature_set(
     device: torch.device,
     hidden_dim: int,
     num_layers: int,
+    dropout: float,
+    bidirectional: bool,
+    fc_hidden: int | None,
     output_dir: Path,
 ) -> None:
     if "Length" not in feature_cols:
@@ -180,7 +207,14 @@ def train_feature_set(
     train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     eval_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
-    model = LSTMModel(input_dim=len(feature_cols), hidden_dim=hidden_dim, num_layers=num_layers)
+    model = LSTMModel(
+        input_dim=len(feature_cols),
+        hidden_dim=hidden_dim,
+        num_layers=num_layers,
+        dropout=dropout,
+        bidirectional=bidirectional,
+        fc_hidden=fc_hidden,
+    )
     train_model(model, train_loader, epochs=epochs, device=device)
 
     preds, y_true = predict_in_batches(model, eval_loader, device=device)
@@ -202,7 +236,11 @@ def load_trace(trace_path: Path) -> pd.DataFrame:
     return df
 
 
-def build_uniform_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+def build_uniform_dataframe(
+    df: pd.DataFrame,
+    quantile: float = 0.05,
+    max_steps: int = 2_000_000,
+) -> pd.DataFrame:
     """Expand the event stream onto a uniform grid based on the smallest Δt."""
 
     if df.empty:
@@ -214,7 +252,8 @@ def build_uniform_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     if positive_deltas.size == 0:
         min_gap = 1.0
     else:
-        min_gap = positive_deltas.min()
+        q = np.clip(quantile, 0.0, 1.0)
+        min_gap = float(np.quantile(positive_deltas, q)) if q > 0 else float(positive_deltas.min())
 
     if min_gap <= 0:
         min_gap = 1.0
@@ -222,7 +261,6 @@ def build_uniform_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     start = float(time_vals[0])
     stop = float(time_vals[-1])
     total_span = max(stop - start, min_gap)
-    max_steps = 2_000_000
 
     steps = int(np.floor(total_span / min_gap)) + 1
     if steps > max_steps:
@@ -250,6 +288,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=32, help="Mini-batch size.")
     parser.add_argument("--hidden-dim", type=int, default=64, help="Hidden dimension of the LSTM.")
     parser.add_argument("--num-layers", type=int, default=1, help="Number of LSTM layers.")
+    parser.add_argument("--dropout", type=float, default=0.0, help="Dropout between LSTM layers (applies when num_layers>1).")
+    parser.add_argument("--bidirectional", action="store_true", help="Use a bidirectional LSTM.")
+    parser.add_argument("--fc-hidden", type=int, default=None, help="Optional hidden units for an extra fully-connected layer after the LSTM.")
     parser.add_argument(
         "--device",
         type=str,
@@ -308,6 +349,9 @@ def main() -> None:
             device=device,
             hidden_dim=args.hidden_dim,
             num_layers=args.num_layers,
+            dropout=args.dropout,
+            bidirectional=args.bidirectional,
+            fc_hidden=args.fc_hidden,
             output_dir=output_dir,
         )
 
