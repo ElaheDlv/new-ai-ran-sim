@@ -210,6 +210,11 @@ def predict_in_batches(
     return pred_cat.numpy().squeeze(-1), target_cat.numpy().squeeze(-1)
 
 
+def format_suffix(**kwargs: int) -> str:
+    parts = [f"{key}{value}" for key, value in kwargs.items()]
+    return "_".join(parts)
+
+
 def train_feature_set(
     df_event: pd.DataFrame,
     trace_path: Path,
@@ -265,8 +270,8 @@ def train_feature_set(
         device=device,
         patience=patience,
     )
-
-    loss_plot = output_dir / f"{trace_path.stem}_loss_{feature_tag}.png"
+    common_suffix = format_suffix(epochs=epochs, window=window, batch=batch_size)
+    loss_plot = output_dir / f"{trace_path.stem}_{feature_tag}_loss_{common_suffix}.png"
     plot_loss_curves(train_hist, val_hist, f"Loss - {trace_path.stem} [{feature_tag}]", loss_plot)
 
     preds, y_true = predict_in_batches(model, eval_loader, device=device)
@@ -276,7 +281,7 @@ def train_feature_set(
 
     time_axis = df_prepared["Time"].values.astype(float)
     title = f"Seq ({' + '.join(feature_cols)}) [{mode}] - {trace_path.stem} - {epochs} epochs"
-    output_path = output_dir / f"{trace_path.stem}_epochs{epochs}_{feature_tag}.png"
+    output_path = output_dir / f"{trace_path.stem}_{feature_tag}_pred_{common_suffix}.png"
     plot_predictions(time_axis, y_true, preds, title, output_path, is_irregular="delta_t" in feature_cols)
 
 

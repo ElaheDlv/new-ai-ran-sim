@@ -1,13 +1,16 @@
 import subprocess
 from pathlib import Path
 
-SCRIPT = "backend/notebooks/plot_and_predict_runner.py"
+SCRIPT = "backend/notebooks/prev_plot_and_predict_runner.py"
 TRACE_DIR = Path("backend/assets/traces")
 ARGS = [
-    "--epochs", "15",
-    "--window", "20",
+    "--epochs", "1500",
+    "--window", "128",
     "--output-dir", "backend/assets/plots",
     "--feature-sets", "length", "delta_t+length", "uniform-length",
+    "--early-stop", "10",
+    "--val-ratio", "0.1",
+    "--batch-size", "64",
 ]
 
 def main():
