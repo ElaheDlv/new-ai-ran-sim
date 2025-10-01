@@ -54,6 +54,63 @@ class LSTMModel(nn.Module):
         return out
 
 
+def resolve_loss(loss_name: str) -> nn.Module:
+    loss_name = loss_name.lower()
+    if loss_name == "mse":
+        return nn.MSELoss()
+    if loss_name in {"mae", "l1"}:
+        return nn.L1Loss()
+    if loss_name in {"smoothl1", "huber"}:
+        return nn.SmoothL1Loss()
+    raise ValueError(f"Unsupported loss function: {loss_name}")
+
+
+def resolve_optimizer(
+    params,
+    optimizer_name: str,
+    lr: float,
+) -> torch.optim.Optimizer:
+    optimizer_name = optimizer_name.lower()
+    if optimizer_name == "adam":
+        return torch.optim.Adam(params, lr=lr)
+    if optimizer_name == "adamw":
+        return torch.optim.AdamW(params, lr=lr)
+    if optimizer_name == "rmsprop":
+        return torch.optim.RMSprop(params, lr=lr)
+    if optimizer_name == "sgd":
+        return torch.optim.SGD(params, lr=lr, momentum=0.9)
+    raise ValueError(f"Unsupported optimizer: {optimizer_name}")
+
+
+def resolve_scheduler(
+    optimizer: torch.optim.Optimizer,
+    scheduler_name: str,
+    epochs: int,
+    factor: float,
+    patience: int,
+    min_lr: float,
+    t_max: int,
+    eta_min: float,
+) -> torch.optim.lr_scheduler._LRScheduler | torch.optim.lr_scheduler.ReduceLROnPlateau | None:
+    scheduler_name = scheduler_name.lower()
+    if scheduler_name in {"none", "off"}:
+        return None
+    if scheduler_name == "plateau":
+        return torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            factor=factor,
+            patience=patience,
+            min_lr=min_lr,
+        )
+    if scheduler_name == "cosine":
+        return torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=max(1, t_max or epochs),
+            eta_min=eta_min,
+        )
+    raise ValueError(f"Unsupported LR scheduler: {scheduler_name}")
+
+
 def train_model(
     model: nn.Module,
     train_loader: DataLoader,
@@ -61,10 +118,28 @@ def train_model(
     epochs: int,
     device: torch.device,
     lr: float = 1e-3,
+    optimizer_name: str = "adam",
+    loss_name: str = "mse",
+    scheduler_name: str = "none",
+    scheduler_factor: float = 0.5,
+    scheduler_patience: int = 10,
+    scheduler_min_lr: float = 1e-6,
+    scheduler_t_max: int = 0,
+    scheduler_eta_min: float = 0.0,
     patience: int = 0,
 ) -> Tuple[List[float], List[float]]:
-    criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    criterion = resolve_loss(loss_name)
+    optimizer = resolve_optimizer(model.parameters(), optimizer_name=optimizer_name, lr=lr)
+    scheduler = resolve_scheduler(
+        optimizer,
+        scheduler_name=scheduler_name,
+        epochs=epochs,
+        factor=scheduler_factor,
+        patience=scheduler_patience,
+        min_lr=scheduler_min_lr,
+        t_max=scheduler_t_max,
+        eta_min=scheduler_eta_min,
+    )
     model.to(device)
 
     train_history: List[float] = []
@@ -105,7 +180,7 @@ def train_model(
             val_loss /= max(1, len(val_loader))
             val_history.append(val_loss)
             print(
-                f"Epoch {epoch + 1}/{epochs} - train_loss={epoch_loss:.6f} val_loss={val_loss:.6f}"
+                f"Epoch {epoch + 1}/{epochs} - train_loss={epoch_loss:.6f} val_loss={val_loss:.6f} lr={optimizer.param_groups[0]['lr']:.6g}"
             )
 
             if val_loss < best_val - 1e-6:
@@ -117,8 +192,20 @@ def train_model(
                 if patience > 0 and wait >= patience:
                     print("Early stopping triggered.")
                     break
+
+            if scheduler is not None:
+                if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    scheduler.step(val_loss)
+                else:
+                    scheduler.step()
         else:
-            print(f"Epoch {epoch + 1}/{epochs} - train_loss={epoch_loss:.6f}")
+            print(
+                f"Epoch {epoch + 1}/{epochs} - train_loss={epoch_loss:.6f} lr={optimizer.param_groups[0]['lr']:.6g}"
+            )
+            if scheduler is not None and not isinstance(
+                scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
+            ):
+                scheduler.step()
 
     if best_state is not None:
         model.load_state_dict(best_state)
@@ -212,8 +299,20 @@ def predict_in_batches(
     return pred_cat.numpy().squeeze(-1), target_cat.numpy().squeeze(-1)
 
 
-def format_suffix(**kwargs: int) -> str:
-    parts = [f"{key}{value}" for key, value in kwargs.items()]
+def format_suffix(**kwargs: object) -> str:
+    parts = []
+    for key, value in kwargs.items():
+        if isinstance(value, float):
+            if abs(value) >= 1 and abs(value - round(value)) < 1e-9:
+                value_str = str(int(round(value)))
+            elif abs(value) < 1e-2:
+                value_str = f"{value:.0e}"
+            else:
+                value_str = f"{value:.4f}".rstrip("0").rstrip(".")
+            value_str = value_str.replace("+", "p")
+        else:
+            value_str = str(value)
+        parts.append(f"{key}{value_str}")
     return "_".join(parts)
 
 
@@ -222,6 +321,7 @@ def train_feature_set(
     trace_path: Path,
     feature_cols: Sequence[str],
     feature_tag: str,
+    feature_display: str,
     mode: str,
     window: int,
     epochs: int,
@@ -231,6 +331,15 @@ def train_feature_set(
     num_layers: int,
     val_ratio: float,
     patience: int,
+    learning_rate: float,
+    optimizer_name: str,
+    loss_name: str,
+    scheduler_name: str,
+    scheduler_factor: float,
+    scheduler_patience: int,
+    scheduler_min_lr: float,
+    scheduler_t_max: int,
+    scheduler_eta_min: float,
     output_dir: Path,
 ) -> None:
     if "Length" not in feature_cols:
@@ -270,6 +379,15 @@ def train_feature_set(
         val_loader,
         epochs=epochs,
         device=device,
+        lr=learning_rate,
+        optimizer_name=optimizer_name,
+        loss_name=loss_name,
+        scheduler_name=scheduler_name,
+        scheduler_factor=scheduler_factor,
+        scheduler_patience=scheduler_patience,
+        scheduler_min_lr=scheduler_min_lr,
+        scheduler_t_max=scheduler_t_max,
+        scheduler_eta_min=scheduler_eta_min,
         patience=patience,
     )
     common_suffix = format_suffix(
@@ -277,9 +395,17 @@ def train_feature_set(
         window=window,
         batch=batch_size,
         hidden=hidden_dim,
+        lr=learning_rate,
+        opt=optimizer_name,
+        loss=loss_name,
+        sched=scheduler_name,
     )
     loss_plot = output_dir / f"{trace_path.stem}_{feature_tag}_loss_{common_suffix}.png"
-    plot_loss_curves(train_hist, val_hist, f"Loss - {trace_path.stem} [{feature_tag}]", loss_plot)
+    loss_title = (
+        f"Loss - {trace_path.stem} [{feature_display}]\n"
+        f"opt={optimizer_name} lr={learning_rate} loss={loss_name} sched={scheduler_name}"
+    )
+    plot_loss_curves(train_hist, val_hist, loss_title, loss_plot)
 
     preds, y_true = predict_in_batches(model, eval_loader, device=device)
 
@@ -287,7 +413,10 @@ def train_feature_set(
     y_true = inverse_length_transform(y_true, scaler, feature_cols)
 
     time_axis = df_prepared["Time"].values.astype(float)
-    title = f"Seq ({' + '.join(feature_cols)}) [{mode}] - {trace_path.stem} - {epochs} epochs"
+    title = (
+        f"{feature_display} [{mode}] - {trace_path.stem} - {epochs} epochs\n"
+        f"opt={optimizer_name} lr={learning_rate} loss={loss_name} sched={scheduler_name}"
+    )
     output_path = output_dir / f"{trace_path.stem}_{feature_tag}_pred_{common_suffix}.png"
     plot_predictions(time_axis, y_true, preds, title, output_path, is_irregular="delta_t" in feature_cols)
 
@@ -350,6 +479,58 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-layers", type=int, default=1, help="Number of LSTM layers.")
     parser.add_argument("--val-ratio", type=float, default=0.1, help="Fraction of samples used for validation (chronological split).")
     parser.add_argument("--early-stop", type=int, default=0, help="Early stopping patience based on validation loss (0 disables).")
+    parser.add_argument("--learning-rate", type=float, default=1e-3, help="Initial learning rate.")
+    parser.add_argument(
+        "--optimizer",
+        type=str,
+        default="adam",
+        choices=("adam", "adamw", "rmsprop", "sgd"),
+        help="Optimizer to use (default: adam).",
+    )
+    parser.add_argument(
+        "--loss",
+        type=str,
+        default="mse",
+        choices=("mse", "mae", "l1", "smoothl1", "huber"),
+        help="Regression loss to minimize (default: mse).",
+    )
+    parser.add_argument(
+        "--lr-scheduler",
+        type=str,
+        default="none",
+        choices=("none", "plateau", "cosine"),
+        help="Learning rate scheduler to apply (default: none).",
+    )
+    parser.add_argument(
+        "--lr-factor",
+        type=float,
+        default=0.5,
+        help="Multiplicative factor for ReduceLROnPlateau (used when --lr-scheduler=plateau).",
+    )
+    parser.add_argument(
+        "--lr-patience",
+        type=int,
+        default=10,
+        help="Patience (epochs) before LR is reduced (plateau scheduler).",
+    )
+    parser.add_argument(
+        "--lr-min",
+        type=float,
+        default=1e-6,
+        help="Minimum LR allowed by the scheduler (plateau scheduler).",
+    )
+    parser.add_argument(
+        "--lr-tmax",
+        type=int,
+        default=0,
+        help="T_max parameter for cosine annealing (defaults to epochs when 0).",
+    )
+    parser.add_argument(
+        "--lr-eta-min",
+        type=float,
+        default=0.0,
+        help="Minimum LR for cosine annealing scheduler.",
+    )
     parser.add_argument(
         "--device",
         type=str,
@@ -395,12 +576,25 @@ def main() -> None:
         config = FEATURE_SETS[feature_name]
         cols = config["columns"]
         mode = config.get("mode", "event")
-        print(f"Training feature set '{feature_name}' ({mode}) -> {cols}")
+        feature_display = " + ".join(cols)
+        feature_tag = feature_name.replace(" ", "")
+        print(
+            " ".join(
+                (
+                    f"Training feature set '{feature_name}' ({mode}) -> {feature_display}",
+                    f"optimizer={args.optimizer}",
+                    f"lr={args.learning_rate}",
+                    f"loss={args.loss}",
+                    f"scheduler={args.lr_scheduler}",
+                )
+            )
+        )
         train_feature_set(
             df_event=df_event,
             trace_path=args.trace,
             feature_cols=cols,
-            feature_tag=feature_name.replace("+", "_").replace(" ", ""),
+            feature_tag=feature_tag,
+            feature_display=feature_display,
             mode=mode,
             window=args.window,
             epochs=args.epochs,
@@ -410,6 +604,15 @@ def main() -> None:
             num_layers=args.num_layers,
             val_ratio=args.val_ratio,
             patience=args.early_stop,
+            learning_rate=args.learning_rate,
+            optimizer_name=args.optimizer,
+            loss_name=args.loss,
+            scheduler_name=args.lr_scheduler,
+            scheduler_factor=args.lr_factor,
+            scheduler_patience=args.lr_patience,
+            scheduler_min_lr=args.lr_min,
+            scheduler_t_max=args.lr_tmax,
+            scheduler_eta_min=args.lr_eta_min,
             output_dir=output_dir,
         )
 

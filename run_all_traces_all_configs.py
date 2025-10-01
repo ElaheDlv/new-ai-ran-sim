@@ -10,7 +10,7 @@ CONFIG_FILE = Path("lstm_configs.txt")   # NEW
 BASE_ARGS = [
     "--epochs", "1500",
     "--window", "128",
-    "--output-dir", "backend/assets/plots/1",
+    "--output-dir", "backend/assets/plots/2023-06-12_all_configs",  # UPDATED
     "--feature-sets", "length", "delta_t+length", "uniform-length",
     "--early-stop", "10",
     "--val-ratio", "0.1",

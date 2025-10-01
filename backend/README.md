@@ -385,6 +385,10 @@ python backend/notebooks/prev_plot_and_predict_runner.py backend/assets/traces/e
   --window 128 --hidden-dim 256 --num-layers 2 \
   --val-ratio 0.1 --early-stop 10 --epochs 80 --batch-size 64
 
+python backend/notebooks/prev_plot_and_predict_runner.py backend/assets/traces/<trace>.csv \
+  --feature-sets time+length \
+  --optimizer adamw --learning-rate 5e-4 \
+  --loss smoothl1 --lr-scheduler plateau --lr-factor 0.6 --lr-patience 25
 
   ```
 - Multiple traces: run once per file to populate a common folder; each call writes `traceName_epochsX_regular.png` and `traceName_epochsX_irregular.png` with axes labelled in milliseconds and bytes:
