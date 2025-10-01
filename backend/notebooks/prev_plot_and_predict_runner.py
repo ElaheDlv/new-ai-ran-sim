@@ -14,6 +14,8 @@ from torch.utils.data import DataLoader, TensorDataset
 FEATURE_SETS: Dict[str, Dict[str, Sequence[str]]] = {
     "length": {"columns": ("Length",), "mode": "event"},
     "delta_t+length": {"columns": ("delta_t", "Length"), "mode": "event"},
+    "time+length": {"columns": ("Time", "Length"), "mode": "event"},
+    "time+delta_t+length": {"columns": ("Time", "delta_t", "Length"), "mode": "event"},
     "uniform-length": {"columns": ("Length",), "mode": "uniform"},
 }
 
