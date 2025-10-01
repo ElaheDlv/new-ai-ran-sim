@@ -270,7 +270,12 @@ def train_feature_set(
         device=device,
         patience=patience,
     )
-    common_suffix = format_suffix(epochs=epochs, window=window, batch=batch_size)
+    common_suffix = format_suffix(
+        epochs=epochs,
+        window=window,
+        batch=batch_size,
+        hidden=hidden_dim,
+    )
     loss_plot = output_dir / f"{trace_path.stem}_{feature_tag}_loss_{common_suffix}.png"
     plot_loss_curves(train_hist, val_hist, f"Loss - {trace_path.stem} [{feature_tag}]", loss_plot)
 
