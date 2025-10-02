@@ -61,9 +61,9 @@
 --window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length uniform-length --hidden-dim 128 --optimizer rmsprop --learning-rate 5e-4 --loss mse
 --window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length uniform-length --hidden-dim 128 --optimizer sgd --learning-rate 5e-4 --loss mse
 --window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length uniform-length --hidden-dim 128 --optimizer sgd --learning-rate 5e-4 --loss mae
---window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length uniform-length --hidden-dim 128 --optimizer adamw --learning-rate e-4 --loss smoothl1
---window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length uniform-length --hidden-dim 128 --optimizer rmsprop --learning-rate e-4 --loss mae
---window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length uniform-length --hidden-dim 128 --optimizer sgd --learning-rate e-4 --loss mse
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length uniform-length --hidden-dim 128 --optimizer adamw --learning-rate 1e-4 --loss smoothl1
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length uniform-length --hidden-dim 128 --optimizer rmsprop --learning-rate 1e-4 --loss mae
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length uniform-length --hidden-dim 128 --optimizer sgd --learning-rate 1e-4 --loss mse
 --window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length uniform-length --hidden-dim 128 --optimizer adam --learning-rate 1e-3 --loss smoothl1 --lr-scheduler plateau --lr-factor 0.6 --lr-patience 25 --lr-min 1e-5
 
 # --- SMALLER, SHORT-RANGE CONTEXT (mostly for URLLC; also a baseline sanity check) ---

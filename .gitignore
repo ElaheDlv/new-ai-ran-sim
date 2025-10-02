@@ -123,4 +123,6 @@ dmypy.json
 
 
 *.pt
+*.png
 # End of file
+

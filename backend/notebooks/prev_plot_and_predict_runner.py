@@ -258,12 +258,25 @@ def build_scaled_sequences(
     df: pd.DataFrame,
     feature_cols: Sequence[str],
     window: int,
+    train_ratio: float | None,
 ) -> Tuple[np.ndarray, np.ndarray, MinMaxScaler]:
-    """Scale selected columns and build padded sequences."""
+    """Scale selected columns and build padded sequences.
+
+    The scaler is fit on the training portion of the series (chronological)
+    when ``train_ratio`` is provided, preventing look-ahead leakage while still
+    applying the learned ranges to the entire sequence history.
+    """
 
     scaler = MinMaxScaler()
     values = df[list(feature_cols)].values.astype(np.float32)
-    scaled = scaler.fit_transform(values).astype(np.float32)
+
+    if train_ratio is not None and 0.0 < train_ratio < 1.0:
+        train_rows = max(window, int(len(values) * train_ratio))
+        train_rows = max(1, min(train_rows, len(values)))
+        scaler.fit(values[:train_rows])
+        scaled = scaler.transform(values).astype(np.float32)
+    else:
+        scaled = scaler.fit_transform(values).astype(np.float32)
 
     target_idx = feature_cols.index("Length")
     X_np, y_np = create_event_sequences(scaled, window=window, target_idx=target_idx)
@@ -350,7 +363,15 @@ def train_feature_set(
     else:
         df_prepared = df_event
 
-    X_np, y_np, scaler = build_scaled_sequences(df_prepared, feature_cols=feature_cols, window=window)
+    val_ratio_clamped = float(np.clip(val_ratio, 0.0, 0.5)) if val_ratio > 0.0 else 0.0
+    train_ratio = None if val_ratio_clamped <= 0.0 else 1.0 - val_ratio_clamped
+
+    X_np, y_np, scaler = build_scaled_sequences(
+        df_prepared,
+        feature_cols=feature_cols,
+        window=window,
+        train_ratio=train_ratio,
+    )
 
     X_tensor = torch.tensor(X_np, dtype=torch.float32)
     y_tensor = torch.tensor(y_np, dtype=torch.float32).unsqueeze(-1)
@@ -360,9 +381,8 @@ def train_feature_set(
     val_loader = None
     train_loader = None
 
-    if val_ratio > 0.0:
-        val_ratio = float(np.clip(val_ratio, 0.0, 0.5))
-        split_idx = max(1, int(n_samples * (1 - val_ratio)))
+    if val_ratio_clamped > 0.0:
+        split_idx = max(1, int(n_samples * (1 - val_ratio_clamped)))
         val_dataset = TensorDataset(X_tensor[split_idx:], y_tensor[split_idx:])
         if len(val_dataset) > 0:
             val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
