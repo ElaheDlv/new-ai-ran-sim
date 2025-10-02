@@ -43,14 +43,40 @@ def create_event_sequences(
 
 
 class LSTMModel(nn.Module):
-    def __init__(self, input_dim: int, hidden_dim: int = 64, num_layers: int = 1) -> None:
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dim: int = 128,
+        num_layers: int = 2,
+        dropout: float = 0.2,
+        fc_ratio: float = 0.5,
+        layer_norm: bool = True,
+    ) -> None:
         super().__init__()
-        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_dim, 1)
+        lstm_dropout = dropout if num_layers > 1 else 0.0
+        self.lstm = nn.LSTM(
+            input_dim,
+            hidden_dim,
+            num_layers,
+            batch_first=True,
+            dropout=lstm_dropout,
+        )
+
+        self.layer_norm = nn.LayerNorm(hidden_dim) if layer_norm else None
+
+        head_hidden = max(1, int(hidden_dim * fc_ratio))
+        head: List[nn.Module] = [nn.Linear(hidden_dim, head_hidden), nn.ReLU()]
+        if dropout > 0:
+            head.append(nn.Dropout(dropout))
+        head.append(nn.Linear(head_hidden, 1))
+        self.fc = nn.Sequential(*head)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out, _ = self.lstm(x)
-        out = self.fc(out[:, -1, :])  # take final time step
+        out = out[:, -1, :]
+        if self.layer_norm is not None:
+            out = self.layer_norm(out)
+        out = self.fc(out)
         return out
 
 
@@ -342,6 +368,9 @@ def train_feature_set(
     device: torch.device,
     hidden_dim: int,
     num_layers: int,
+    dropout: float,
+    fc_ratio: float,
+    layer_norm: bool,
     val_ratio: float,
     patience: int,
     learning_rate: float,
@@ -362,6 +391,9 @@ def train_feature_set(
         df_prepared = build_uniform_dataframe(df_event)
     else:
         df_prepared = df_event
+
+    dropout = float(np.clip(dropout, 0.0, 0.95))
+    fc_ratio = max(1e-3, float(fc_ratio))
 
     val_ratio_clamped = float(np.clip(val_ratio, 0.0, 0.5)) if val_ratio > 0.0 else 0.0
     train_ratio = None if val_ratio_clamped <= 0.0 else 1.0 - val_ratio_clamped
@@ -392,7 +424,14 @@ def train_feature_set(
     eval_dataset = TensorDataset(X_tensor, y_tensor)
     eval_loader = DataLoader(eval_dataset, batch_size=batch_size, shuffle=False)
 
-    model = LSTMModel(input_dim=len(feature_cols), hidden_dim=hidden_dim, num_layers=num_layers)
+    model = LSTMModel(
+        input_dim=len(feature_cols),
+        hidden_dim=hidden_dim,
+        num_layers=num_layers,
+        dropout=dropout,
+        fc_ratio=fc_ratio,
+        layer_norm=layer_norm,
+    )
     train_hist, val_hist = train_model(
         model,
         train_loader,
@@ -415,6 +454,10 @@ def train_feature_set(
         window=window,
         batch=batch_size,
         hidden=hidden_dim,
+        layers=num_layers,
+        drop=dropout,
+        fcr=fc_ratio,
+        ln=int(layer_norm),
         lr=learning_rate,
         opt=optimizer_name,
         loss=loss_name,
@@ -423,7 +466,8 @@ def train_feature_set(
     loss_plot = output_dir / f"{trace_path.stem}_{feature_tag}_loss_{common_suffix}.png"
     loss_title = (
         f"Loss - {trace_path.stem} [{feature_display}]\n"
-        f"opt={optimizer_name} lr={learning_rate} loss={loss_name} sched={scheduler_name}"
+        f"opt={optimizer_name} lr={learning_rate} loss={loss_name} sched={scheduler_name} "
+        f"layers={num_layers} hidden={hidden_dim} drop={dropout} fcr={fc_ratio:.2f} ln={int(layer_norm)}"
     )
     plot_loss_curves(train_hist, val_hist, loss_title, loss_plot)
 
@@ -435,7 +479,8 @@ def train_feature_set(
     time_axis = df_prepared["Time"].values.astype(float)
     title = (
         f"{feature_display} [{mode}] - {trace_path.stem} - {epochs} epochs\n"
-        f"opt={optimizer_name} lr={learning_rate} loss={loss_name} sched={scheduler_name}"
+        f"opt={optimizer_name} lr={learning_rate} loss={loss_name} sched={scheduler_name} "
+        f"layers={num_layers} hidden={hidden_dim} drop={dropout} fcr={fc_ratio:.2f} ln={int(layer_norm)}"
     )
     output_path = output_dir / f"{trace_path.stem}_{feature_tag}_pred_{common_suffix}.png"
     plot_predictions(time_axis, y_true, preds, title, output_path, is_irregular="delta_t" in feature_cols)
@@ -495,8 +540,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--window", type=int, default=20, help="Sliding window size.")
     parser.add_argument("--epochs", type=int, default=10, help="Training epochs for each model.")
     parser.add_argument("--batch-size", type=int, default=32, help="Mini-batch size.")
-    parser.add_argument("--hidden-dim", type=int, default=64, help="Hidden dimension of the LSTM.")
-    parser.add_argument("--num-layers", type=int, default=1, help="Number of LSTM layers.")
+    parser.add_argument("--hidden-dim", type=int, default=128, help="Hidden dimension of the LSTM.")
+    parser.add_argument("--num-layers", type=int, default=2, help="Number of LSTM layers.")
+    parser.add_argument("--dropout", type=float, default=0.2, help="Dropout rate applied within LSTM stack and head.")
+    parser.add_argument(
+        "--fc-ratio",
+        type=float,
+        default=0.5,
+        help="Hidden fraction for the MLP head (multiplier * hidden_dim).",
+    )
+    parser.add_argument(
+        "--no-layer-norm",
+        action="store_false",
+        dest="layer_norm",
+        default=True,
+        help="Disable layer normalization before the prediction head.",
+    )
     parser.add_argument("--val-ratio", type=float, default=0.1, help="Fraction of samples used for validation (chronological split).")
     parser.add_argument("--early-stop", type=int, default=0, help="Early stopping patience based on validation loss (0 disables).")
     parser.add_argument("--learning-rate", type=float, default=1e-3, help="Initial learning rate.")
@@ -606,6 +665,10 @@ def main() -> None:
                     f"lr={args.learning_rate}",
                     f"loss={args.loss}",
                     f"scheduler={args.lr_scheduler}",
+                    f"layers={args.num_layers}",
+                    f"hidden={args.hidden_dim}",
+                    f"dropout={args.dropout}",
+                    f"layer_norm={args.layer_norm}",
                 )
             )
         )
@@ -622,6 +685,9 @@ def main() -> None:
             device=device,
             hidden_dim=args.hidden_dim,
             num_layers=args.num_layers,
+            dropout=args.dropout,
+            fc_ratio=args.fc_ratio,
+            layer_norm=args.layer_norm,
             val_ratio=args.val_ratio,
             patience=args.early_stop,
             learning_rate=args.learning_rate,
