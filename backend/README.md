@@ -200,6 +200,55 @@ python backend/main.py --preset simple --mode server \
   --trace-raw-map IMSI_2:backend/assets/traces/embb_04_10.csv:172.30.1.1 \
   --trace-bin 1.0 --trace-overhead-bytes 0 --trace-speedup 1.0 --strict-real-traffic
 
+---
+
+## 📊 Traffic Forecasting Experiments
+
+The notebook runner `backend/notebooks/prev_plot_and_predict_runner.py` can train sequence models on packet traces located in `backend/assets/traces/`. Three backbone options are available via `--model`:
+
+- `tcn` (default): dilated Temporal Convolutional Network.
+- `lstm`: stacked LSTM with an MLP prediction head.
+- `seq2seq`: encoder LSTM with Luong attention and an MLP head.
+
+### Quick single-trace runs
+
+```
+# Temporal ConvNet (default)
+python backend/notebooks/prev_plot_and_predict_runner.py backend/assets/traces/URLLC_M1_aligned_trace.csv \
+  --model tcn --feature-sets time+delta_t+length --window 256 --epochs 200 \
+  --hidden-dim 192 --tcn-layers 8 --tcn-kernel 5 --dropout 0.25 \
+  --optimizer adamw --learning-rate 3e-4 --loss smoothl1 --lr-scheduler plateau --lr-patience 25
+
+# LSTM baseline
+python backend/notebooks/prev_plot_and_predict_runner.py backend/assets/traces/URLLC_M1_aligned_trace.csv \
+  --model lstm --feature-sets time+delta_t+length --hidden-dim 160 --num-layers 3 \
+  --dropout 0.3 --fc-ratio 0.6 --optimizer adamw --learning-rate 3e-4
+
+# Seq2Seq + attention
+python backend/notebooks/prev_plot_and_predict_runner.py backend/assets/traces/URLLC_M1_aligned_trace.csv \
+  --model seq2seq --feature-sets time+delta_t+length --hidden-dim 160 --num-layers 2 \
+  --dropout 0.25 --optimizer adamw --learning-rate 3e-4 --lr-scheduler plateau --lr-patience 20
+```
+
+Use `--export-delta-dir <dir>` to drop the trace with its computed `delta_t` column (helpful for auditing inter-arrival times) and `--scaler-stats-dir <dir>` to write MinMax scaler summaries per feature set. The JSON files list per-feature min/max/range so you can confirm normalization: values should span `[0, 1]` after scaling.
+
+### Batch sweeps
+
+`run_all_traces_all_configs.py` reads `lstm_configs.txt` line-by-line and appends each configuration to a base command. The file now includes TCN, LSTM, and Seq2Seq presets under “MODEL FAMILY COMPARISON”. Trigger the sweep with:
+
+```
+python run_all_traces_all_configs.py
+```
+
+To add your own experiments, append new lines to `lstm_configs.txt` with the desired `--model`, optimizer, window, etc. Any arguments can be overridden per line.
+
+### Inspecting normalization
+
+1. Run the runner with `--scaler-stats-dir backend/assets/scaler_stats`.
+2. Open the emitted JSON (one per feature set, e.g. `URLLC_M1_aligned_trace_time+delta_t+length_scaler.json`).
+3. Verify each feature’s `data_min`/`data_max` and `data_range`; scaled tensors will map the raw values into `[0, 1]` using those stats.
+4. If a feature has an unexpected range, inspect the exported `delta_t` CSV (via `--export-delta-dir`) to diagnose anomalies in the raw trace.
+
 # Three stationary UEs, URLLC-only (all use URLLC trace)
 python backend/main.py --preset simple --mode headless --steps 180 \
   --freeze-mobility --ue-embb 0 --ue-urllc 3 --ue-mmtc 0 \
