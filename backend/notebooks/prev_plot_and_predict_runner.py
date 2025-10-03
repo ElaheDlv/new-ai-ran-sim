@@ -715,7 +715,7 @@ def parse_args() -> argparse.Namespace:
         default=True,
         help="Disable layer normalization before the prediction head.",
     )
-    parser.add_argument("--val-ratio", type=float, default=0.1, help="Fraction of samples used for validation (chronological split).")
+    parser.add_argument("--val-ratio", type=float, default=0.2, help="Fraction of samples used for validation (chronological split).")
     parser.add_argument("--early-stop", type=int, default=0, help="Early stopping patience based on validation loss (0 disables).")
     parser.add_argument("--learning-rate", type=float, default=1e-3, help="Initial learning rate.")
     parser.add_argument(

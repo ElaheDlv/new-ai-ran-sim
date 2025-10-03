@@ -1,0 +1,95 @@
+--window 192 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 128
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 128
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 256
+--window 384 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 192
+--window 384 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 256
+--window 512 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 256
+
+--window 256 --batch-size 64 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 128
+--window 384 --batch-size 64 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 192
+
+--window 384 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 192
+--window 512 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 256
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 128
+--window 384 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 192
+
+# --- Sweep Window Sizes ---
+--window 64  --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128
+--window 96  --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128
+--window 128 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128
+--window 192 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128
+--window 384 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128
+--window 512 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128
+
+
+# --- Sweep Hidden Dimensions ---
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 64
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 192
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 256
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 512
+
+
+# --- Batch-size sweep ---
+--window 256 --batch-size 16 --early-stop 30 --feature-sets time+length --hidden-dim 128
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length --hidden-dim 128
+--window 256 --batch-size 64 --early-stop 30 --feature-sets time+length --hidden-dim 128
+--window 256 --batch-size 128 --early-stop 30 --feature-sets time+length --hidden-dim 128
+
+# --- Learning-rate sweep ---
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length --hidden-dim 128 --optimizer adamw --learning-rate 1e-4 --loss smoothl1
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length --hidden-dim 128 --optimizer adamw --learning-rate 3e-4 --loss smoothl1
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length --hidden-dim 128 --optimizer adamw --learning-rate 5e-4 --loss smoothl1
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length --hidden-dim 128 --optimizer adamw --learning-rate 1e-3 --loss smoothl1
+
+# --- Feature-set ablation ---
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length --hidden-dim 128
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+delta_t+length --hidden-dim 128
+--window 256 --batch-size 32 --early-stop 30 --feature-sets delta_t+length --hidden-dim 128
+--window 256 --batch-size 32 --early-stop 30 --feature-sets uniform-length --hidden-dim 128
+
+
+# --- OPTIMIZER / LOSS VARIANTS (override defaults added in runner) ---
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128 --optimizer adamw --learning-rate 5e-4 --loss smoothl1
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128 --optimizer rmsprop --learning-rate 5e-4 --loss smoothl1
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128 --optimizer sgd --learning-rate 5e-4 --loss smoothl1
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128 --optimizer adamw --learning-rate 5e-4 --loss mae
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128 --optimizer rmsprop --learning-rate 5e-4 --loss mae
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128 --optimizer sgd --learning-rate 5e-4 --loss mae
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128 --optimizer adamw --learning-rate 5e-4 --loss mse
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128 --optimizer rmsprop --learning-rate 5e-4 --loss mse
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128 --optimizer sgd --learning-rate 5e-4 --loss mse
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128 --optimizer sgd --learning-rate 5e-4 --loss mae
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128 --optimizer adamw --learning-rate 1e-4 --loss smoothl1
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128 --optimizer rmsprop --learning-rate 1e-4 --loss mae
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128 --optimizer sgd --learning-rate 1e-4 --loss mse
+--window 256 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128 --optimizer adam --learning-rate 1e-3 --loss smoothl1 --lr-scheduler plateau --lr-factor 0.6 --lr-patience 25 --lr-min 1e-5
+
+# --- ARCHITECTURE VARIANTS (stacked LSTM + MLP head tweaks) ---
+--window 256 --batch-size 32 --early-stop 40 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 128 --num-layers 2 --dropout 0.2 --fc-ratio 0.5 --optimizer adamw --learning-rate 5e-4 --loss smoothl1 --lr-scheduler plateau --lr-factor 0.5 --lr-patience 20 --lr-min 1e-5
+--window 256 --batch-size 32 --early-stop 40 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 192 --num-layers 3 --dropout 0.3 --fc-ratio 0.6 --optimizer adamw --learning-rate 3e-4 --loss smoothl1 --lr-scheduler plateau --lr-factor 0.5 --lr-patience 25 --lr-min 1e-5
+--window 384 --batch-size 32 --early-stop 40 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 160 --num-layers 2 --dropout 0.25 --fc-ratio 0.75 --optimizer rmsprop --learning-rate 2e-4 --loss mae --lr-scheduler plateau --lr-factor 0.6 --lr-patience 25 --lr-min 1e-5
+--window 384 --batch-size 64 --early-stop 40 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 256 --num-layers 2 --dropout 0.15 --fc-ratio 0.5 --optimizer adam --learning-rate 7.5e-4 --loss smoothl1 --lr-scheduler cosine --lr-tmax 200 --lr-eta-min 5e-5
+--window 512 --batch-size 32 --early-stop 40 --feature-sets time+length time+delta_t+length delta_t+length  --hidden-dim 192 --num-layers 3 --dropout 0.35 --fc-ratio 0.6 --optimizer adamw --learning-rate 3e-4 --loss smoothl1 --lr-scheduler cosine --lr-tmax 300 --lr-eta-min 1e-5
+
+# --- MODEL FAMILY COMPARISON ---
+--window 256 --batch-size 32 --early-stop 40 --feature-sets time+delta_t+length --model tcn --hidden-dim 160 --tcn-layers 8 --tcn-kernel 3 --dropout 0.2 --optimizer adamw --learning-rate 4e-4 --loss smoothl1 --lr-scheduler plateau --lr-factor 0.5 --lr-patience 20 --lr-min 1e-5
+--window 256 --batch-size 32 --early-stop 40 --feature-sets time+delta_t+length --model tcn --hidden-dim 192 --tcn-layers 8 --tcn-kernel 5 --dropout 0.25 --optimizer adamw --learning-rate 3e-4 --loss smoothl1 --lr-scheduler plateau --lr-factor 0.5 --lr-patience 25 --lr-min 1e-5
+--window 256 --batch-size 32 --early-stop 40 --feature-sets time+delta_t+length --model lstm --hidden-dim 160 --num-layers 3 --dropout 0.3 --fc-ratio 0.6 --optimizer adamw --learning-rate 3e-4 --loss smoothl1 --lr-scheduler plateau --lr-factor 0.5 --lr-patience 20 --lr-min 1e-5
+--window 256 --batch-size 32 --early-stop 40 --feature-sets time+delta_t+length --model lstm --hidden-dim 192 --num-layers 2 --dropout 0.2 --fc-ratio 0.5 --optimizer adam --learning-rate 6e-4 --loss smoothl1 --lr-scheduler cosine --lr-tmax 250 --lr-eta-min 5e-5
+--window 256 --batch-size 32 --early-stop 40 --feature-sets time+delta_t+length --model seq2seq --hidden-dim 160 --num-layers 2 --dropout 0.25 --fc-ratio 0.5 --optimizer adamw --learning-rate 3e-4 --loss smoothl1 --lr-scheduler plateau --lr-factor 0.5 --lr-patience 20 --lr-min 1e-5
+--window 256 --batch-size 32 --early-stop 40 --feature-sets time+delta_t+length --model seq2seq --hidden-dim 192 --num-layers 3 --dropout 0.3 --fc-ratio 0.6 --optimizer adam --learning-rate 5e-4 --loss smoothl1 --lr-scheduler cosine --lr-tmax 250 --lr-eta-min 5e-5
+
+# --- SMALLER, SHORT-RANGE CONTEXT (mostly for URLLC; also a baseline sanity check) ---
+--window 64  --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 128
+--window 96  --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 128
+--window 128 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 128
+--window 160 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 192
+
+# Stability variants (same windows, larger hidden or batch)
+--window 96  --batch-size 64 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 192
+--window 128 --batch-size 64 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 192
+
+# If you want a pure-Length ablation at small windows (to measure Δ from adding delta_t)
+--window 128 --batch-size 32 --early-stop 30 --feature-sets time+length time+delta_t+length  delta_t+length  --hidden-dim 128
