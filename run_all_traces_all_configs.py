@@ -7,10 +7,12 @@ import shlex   # NEW
 SCRIPT = "backend/notebooks/prev_plot_and_predict_runner.py"
 TRACE_DIR = Path("backend/assets/traces")
 CONFIG_FILE = Path("lstm_configs.txt")   # NEW
+#CONFIG_FILE = Path("mega_sweep_configs.txt") 
+
 BASE_ARGS = [
     "--epochs", "1500",
     "--window", "128",
-    "--output-dir", "backend/assets/plots/tcn_architecture",  # UPDATED
+    "--output-dir", "backend/assets/plots/lstm_configs_seperate",  # UPDATED
     "--feature-sets", "length", "delta_t+length", "uniform-length",
     "--early-stop", "10",
     "--val-ratio", "0.1",

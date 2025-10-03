@@ -581,7 +581,9 @@ def train_feature_set(
         model=model_type,
         kernel=tcn_kernel if model_type == "tcn" else None,
     )
-    loss_plot = output_dir / f"{trace_path.stem}_{feature_tag}_loss_{common_suffix}.png"
+    run_dir = output_dir / trace_path.stem / feature_tag / common_suffix
+    run_dir.mkdir(parents=True, exist_ok=True)
+    loss_plot = run_dir / "loss.png"
     arch_info = (
         f"model={model_type} "
         f"layers={tcn_layers if model_type == 'tcn' else num_layers} "
@@ -612,7 +614,7 @@ def train_feature_set(
         f"opt={optimizer_name} lr={learning_rate} loss={loss_name} sched={scheduler_name} "
         f"{arch_info}"
     )
-    output_path = output_dir / f"{trace_path.stem}_{feature_tag}_pred_{common_suffix}.png"
+    output_path = run_dir / "prediction.png"
     plot_predictions(time_axis, y_true, preds, title, output_path, is_irregular="delta_t" in feature_cols)
 
 
